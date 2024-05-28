@@ -2,7 +2,7 @@
   "name": "realtime-voice-changer",
   "version": "1.0.0",
   "description": "A real-time voice changer application using WebSockets and ONNX/TensorFlow/PyTorch",
-  "main": "server/server.js",
+  "main": "index.js",
   "scripts": {
     "start": "node server/server.js",
     "websocket": "node server/websocket-server.js"
@@ -18,7 +18,20 @@
   "devDependencies": {
     "nodemon": "^2.0.7"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC"
+  "keywords": [
+    "voice",
+    "changer",
+    "real-time",
+    "onnx",
+    "tensorflow",
+    "pytorch",
+    "websocket"
+  ],
+  "author": "sioaeko",
+  "license": "MIT",
+  "files": [
+    "server",
+    "pages",
+    "index.js"
+  ]
 }
