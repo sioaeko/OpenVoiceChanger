@@ -21,7 +21,7 @@ WebSockets와 ONNX/TensorFlow/PyTorch를 사용한 실시간 음성 변환 애�
 ### 1. 리포지토리 클론:
 
    ```bash
-   git clone https://github.com/yourusername/OpenVoiceChanger.git
+   git clone https://github.com/sioaeko/OpenVoiceChanger.git
    cd realtime-voice-changer
    ```
 
