@@ -90,7 +90,7 @@ const ws = new WebSocket('ws://your-ngrok-url.ngrok.io');
 
 ## Thanks for
 
-- https://github.com/microsoft/onnxruntime
-- https://www.npmjs.com/package/ws
-- https://expressjs.com/
-- https://ngrok.com/
+- [ONNX Runtime](https://github.com/microsoft/onnxruntime)
+- [websocket](https://www.npmjs.com/package/ws)
+- [expressjs](https://expressjs.com/)
+- [ngrok](https://ngrok.com/)
