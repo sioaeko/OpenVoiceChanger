@@ -1,4 +1,4 @@
-# 실시간 목소리 변환기 (Real-Time Voice Changer)
+# OpenVoiceChanger(OVC) 
 
 WebSockets와 ONNX/TensorFlow/PyTorch를 사용한 실시간 음성 변환 애플리케이션입니다.
 
@@ -22,7 +22,7 @@ WebSockets와 ONNX/TensorFlow/PyTorch를 사용한 실시간 음성 변환 애�
 
    ```bash
    git clone https://github.com/sioaeko/OpenVoiceChanger.git
-   cd realtime-voice-changer
+   cd OpenVoiceChanger
    ```
 
 
