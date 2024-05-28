@@ -1,0 +1,24 @@
+{
+  "name": "realtime-voice-changer",
+  "version": "1.0.0",
+  "description": "A real-time voice changer application using WebSockets and ONNX/TensorFlow/PyTorch",
+  "main": "server/server.js",
+  "scripts": {
+    "start": "node server/server.js",
+    "websocket": "node server/websocket-server.js"
+  },
+  "dependencies": {
+    "express": "^4.17.1",
+    "body-parser": "^1.19.0",
+    "onnxruntime-node": "^1.8.0",
+    "@tensorflow/tfjs-node": "^3.6.0",
+    "ws": "^7.4.6",
+    "python-shell": "^2.0.3"
+  },
+  "devDependencies": {
+    "nodemon": "^2.0.7"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}
