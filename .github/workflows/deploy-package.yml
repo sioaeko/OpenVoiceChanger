@@ -29,4 +29,3 @@ jobs:
       run: npm publish
       env:
         NODE_AUTH_TOKEN: ${{NPM_TOKEN}}
-      
