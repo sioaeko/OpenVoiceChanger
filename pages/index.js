@@ -6,6 +6,17 @@ export default function Home() {
   const [audioChunks, setAudioChunks] = useState([]);
   const [recorder, setRecorder] = useState(null);
   const [socket, setSocket] = useState(null);
+  const [modelImage, setModelImage] = useState('model1.jpg');
+  const [settings, setSettings] = useState({
+    responseThreshold: 50,
+    toneSetting: 50,
+    indexRate: 50,
+    sampleLength: 50,
+    fadeLength: 50,
+    inferenceExtraTime: 50,
+    inputNoiseReduction: false,
+    outputNoiseReduction: false,
+  });
 
   useEffect(() => {
     const initAudio = async () => {
@@ -16,7 +27,6 @@ export default function Home() {
     };
     initAudio();
 
-    // WebSocket 연결 설정
     const ws = new WebSocket('ws://your-ngrok-url.ngrok.io'); // 여기에 ngrok URL을 사용하세요.
     ws.onopen = () => {
       console.log('WebSocket connected');
@@ -24,7 +34,7 @@ export default function Home() {
     ws.onmessage = (event) => {
       const { processedAudio, rvcProcessedAudio } = JSON.parse(event.data);
       playProcessedAudio(processedAudio);
-      playRVCProcessedAudio(rvcProcessedAudio);
+      playProcessedAudio(rvcProcessedAudio);
     };
     setSocket(ws);
 
@@ -58,7 +68,7 @@ export default function Home() {
 
   const sendAudioData = (audioBuffer) => {
     if (socket && socket.readyState === WebSocket.OPEN) {
-      socket.send(JSON.stringify({ audioBuffer }));
+      socket.send(JSON.stringify({ audioBuffer, settings, model: document.getElementById('rvc-model').value }));
     }
   };
 
@@ -72,14 +82,19 @@ export default function Home() {
     });
   };
 
-  const playRVCProcessedAudio = (audioBuffer) => {
-    const audioCtx = new AudioContext();
-    audioCtx.decodeAudioData(audioBuffer, (buffer) => {
-      const source = audioCtx.createBufferSource();
-      source.buffer = buffer;
-      source.connect(audioCtx.destination);
-      source.start(0);
-    });
+  const handleSettingChange = (e) => {
+    const { name, value, type, checked } = e.target;
+    setSettings((prevSettings) => ({
+      ...prevSettings,
+      [name]: type === 'checkbox' ? checked : parseFloat(value),
+    }));
+  };
+
+  const updateModelImage = () => {
+    const modelSelect = document.getElementById('rvc-model');
+    const selectedOption = modelSelect.options[modelSelect.selectedIndex];
+    const imgSrc = selectedOption.getAttribute('data-img');
+    setModelImage(imgSrc);
   };
 
   return (
@@ -107,113 +122,61 @@ export default function Home() {
           <MenuIcon className="w-6 h-6" />
         </button>
       </header>
-      <main className="flex-1 grid grid-cols-1 md:grid-cols-[2fr_1fr] gap-8 p-4 md:p-8">
-        <div className="flex flex-col gap-4">
-          <div className="rounded-lg overflow-hidden aspect-video">
-            <span className="w-full h-full object-cover rounded-md bg-muted" />
+      <main className="p-4 md:p-8">
+        <div className="controls mb-8">
+          <div className="mb-4">
+            <button className="mr-2" onClick={startRecording}>Start Recording</button>
+            <button onClick={stopRecording}>Stop Recording</button>
           </div>
-          <div className="flex items-center gap-4">
-            <input
-              className="flex-1 slider"
-              type="range"
-              min="0"
-              max="100"
-              defaultValue="50"
-            />
-            <button size="icon" variant="ghost">
-              <Volume2Icon className="w-5 h-5" />
-            </button>
+          <div className="model-select mb-4">
+            <label htmlFor="rvc-model" className="mr-2">RVC Model:</label>
+            <select id="rvc-model" onChange={updateModelImage} className="mr-2">
+              <option value="model1" data-img="model1.jpg">Model 1</option>
+              <option value="model2" data-img="model2.jpg">Model 2</option>
+              <option value="model3" data-img="model3.jpg">Model 3</option>
+            </select>
+            <img id="model-image" src={modelImage} alt="Model Image" className="w-12 h-12 rounded" />
           </div>
         </div>
-        <div className="flex flex-col gap-4">
-          <div className="card">
-            <div className="card-header">
-              <div className="card-title">Voice Effects</div>
+        <div className="card mb-8">
+          <div className="card-header">General Settings</div>
+          <div className="card-content">
+            <div className="mb-4">
+              <label htmlFor="responseThreshold" className="block">Response Threshold</label>
+              <input id="responseThreshold" name="responseThreshold" className="slider" type="range" min="0" max="100" value={settings.responseThreshold} onChange={handleSettingChange} />
             </div>
-            <div className="card-content grid gap-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label htmlFor="pitch">Pitch</label>
-                  <input
-                    id="pitch"
-                    className="slider"
-                    type="range"
-                    min="0"
-                    max="100"
-                    defaultValue="50"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label htmlFor="tone">Tone</label>
-                  <input
-                    id="tone"
-                    className="slider"
-                    type="range"
-                    min="0"
-                    max="100"
-                    defaultValue="50"
-                  />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <label htmlFor="reverb">Reverb</label>
-                <input
-                  id="reverb"
-                  className="slider"
-                  type="range"
-                  min="0"
-                  max="100"
-                  defaultValue="50"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label htmlFor="gain">Gain</label>
-                  <input
-                    id="gain"
-                    className="slider"
-                    type="range"
-                    min="0"
-                    max="100"
-                    defaultValue="50"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label htmlFor="noise">Noise</label>
-                  <input
-                    id="noise"
-                    className="slider"
-                    type="range"
-                    min="0"
-                    max="100"
-                    defaultValue="50"
-                  />
-                </div>
-              </div>
+            <div className="mb-4">
+              <label htmlFor="toneSetting" className="block">Tone Setting</label>
+              <input id="toneSetting" name="toneSetting" className="slider" type="range" min="0" max="100" value={settings.toneSetting} onChange={handleSettingChange} />
+            </div>
+            <div className="mb-4">
+              <label htmlFor="indexRate" className="block">Index Rate</label>
+              <input id="indexRate" name="indexRate" className="slider" type="range" min="0" max="100" value={settings.indexRate} onChange={handleSettingChange} />
             </div>
           </div>
-          <div className="card">
-            <div className="card-header">
-              <div className="card-title">Presets</div>
+        </div>
+        <div className="card">
+          <div className="card-header">Performance Settings</div>
+          <div className="card-content">
+            <div className="mb-4">
+              <label htmlFor="sampleLength" className="block">Sample Length</label>
+              <input id="sampleLength" name="sampleLength" className="slider" type="range" min="0" max="100" value={settings.sampleLength} onChange={handleSettingChange} />
             </div>
-            <div className="card-content grid gap-4">
-              <div className="grid grid-cols-2 gap-4">
-                <button size="sm" variant="outline">
-                  Robot
-                </button>
-                <button size="sm" variant="outline">
-                  Chipmunk
-                </button>
-                <button size="sm" variant="outline">
-                  Deep Voice
-                </button>
-                <button size="sm" variant="outline">
-                  Whisper
-                </button>
-              </div>
-              <button size="sm" variant="outline">
-                Manage Presets
-              </button>
+            <div className="mb-4">
+              <label htmlFor="fadeLength" className="block">Fade Length</label>
+              <input id="fadeLength" name="fadeLength" className="slider" type="range" min="0" max="100" value={settings.fadeLength} onChange={handleSettingChange} />
+            </div>
+            <div className="mb-4">
+              <label htmlFor="inferenceExtraTime" className="block">Inference Extra Time</label>
+              <input id="inferenceExtraTime" name="inferenceExtraTime" className="slider" type="range" min="0" max="100" value={settings.inferenceExtraTime} onChange={handleSettingChange} />
+            </div>
+            <div className="mb-4">
+              <label htmlFor="inputNoiseReduction" className="block">Input Noise Reduction</label>
+              <input id="inputNoiseReduction" name="inputNoiseReduction" className="mr-2" type="checkbox" checked={settings.inputNoiseReduction} onChange={handleSettingChange} />
+            </div>
+            <div className="mb-4">
+              <label htmlFor="outputNoiseReduction" className="block">Output Noise Reduction</label>
+              <input id="outputNoiseReduction" name="outputNoiseReduction" className="mr-2" type="checkbox" checked={settings.outputNoiseReduction} onChange={handleSettingChange} />
             </div>
           </div>
         </div>
@@ -260,27 +223,6 @@ function MicIcon(props) {
       <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
       <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
       <line x1="12" x2="12" y1="19" y2="22" />
-    </svg>
-  );
-}
-
-function Volume2Icon(props) {
-  return (
-    <svg
-      {...props}
-      xmlns="http://www.w3.org/2000/svg"
-      width="24"
-      height="24"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-      <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
-      <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
     </svg>
   );
 }
