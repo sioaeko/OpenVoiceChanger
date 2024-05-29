@@ -22,8 +22,9 @@ export default function Home() {
       console.log('WebSocket connected');
     };
     ws.onmessage = (event) => {
-      const { processedAudio } = JSON.parse(event.data);
+      const { processedAudio, rvcProcessedAudio } = JSON.parse(event.data);
       playProcessedAudio(processedAudio);
+      playRVCProcessedAudio(rvcProcessedAudio);
     };
     setSocket(ws);
 
@@ -62,6 +63,16 @@ export default function Home() {
   };
 
   const playProcessedAudio = (audioBuffer) => {
+    const audioCtx = new AudioContext();
+    audioCtx.decodeAudioData(audioBuffer, (buffer) => {
+      const source = audioCtx.createBufferSource();
+      source.buffer = buffer;
+      source.connect(audioCtx.destination);
+      source.start(0);
+    });
+  };
+
+  const playRVCProcessedAudio = (audioBuffer) => {
     const audioCtx = new AudioContext();
     audioCtx.decodeAudioData(audioBuffer, (buffer) => {
       const source = audioCtx.createBufferSource();
