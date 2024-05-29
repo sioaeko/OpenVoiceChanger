@@ -10,11 +10,14 @@ const loadRVCModel = async () => {
   }
 };
 
-const processRVC = async (audioBuffer) => {
+const processRVC = async (audioBuffer, settings) => {
   await loadRVCModel();
   
   const inputTensor = new Float32Array(audioBuffer);
   const tensor = new rvcSession.Tensor('float32', inputTensor, [1, inputTensor.length]);
+
+  // Add settings processing logic here if necessary
+  // Example: const adjustedTensor = adjustTensorBasedOnSettings(tensor, settings);
 
   const results = await rvcSession.run({ input: tensor });
   const output = results.output.data;
