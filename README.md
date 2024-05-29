@@ -1,13 +1,15 @@
 # OpenVoiceChanger(OVC) 
 
-WebSockets와 ONNX/TensorFlow/PyTorch를 사용한 실시간 음성 변환 애플리케이션입니다.
+이 프로젝트는 WebSockets와 ONNX/TensorFlow/PyTorch를 사용하여 실시간으로 음성을 변환하는 애플리케이션입니다.
+최신 RVC(Realtime Voice Cloning) 기술을 통합하여 음성 데이터를 실시간으로 처리하고 다양한 음성 효과를 적용할 수 있습니다.
 
 ## 특징
 
 - ONNX와 TensorFlow.js를 사용한 실시간 오디오 처리
 - 실시간 통신을 위한 WebSocket 서버
 - HTTP 요청 처리를 위한 Express 서버
-- 다양한 오디오 효과 설정 가능
+- 다양한 음성 효과 설정 가능
+- RVC 모델을 사용하여 실시간 음성 클로닝을 지원합니다.
 
 ## 사전 요구 사항
 
