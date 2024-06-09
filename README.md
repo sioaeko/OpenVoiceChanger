@@ -75,17 +75,24 @@ const ws = new WebSocket('ws://your-ngrok-url.ngrok.io');
 
 ### 5. 프로젝트 구조
 ```ardunio
-/realtime-voice-changer
+OpenVoiceChanger/
+├── .github/
+│   └── workflows/
+│       └── node.js.yml      # GitHub Actions 설정 파일
+├── node_modules/             # npm 의존성 설치 디렉토리 (npm install 시 생성)
+├── path/
+│   └── to/
+│       └── your/
+│           └── model.onnx    # ONNX 모델 파일
+├── venv/                     # Python 가상 환경 디렉토리 (install_dependencies.sh 실행 시 생성)
 ├── .gitignore
+├── LICENSE
+├── README.md
+├── index.js                  # 수정된 서버 설정 파일
+├── install_dependencies.sh   # 의존성 설치 스크립트 파일
 ├── package.json
-├── server
-│   ├── server.js
-│   └── websocket-server.js
-├── pages
-│   ├── index.js
-│   └── api
-│       └── process-audio.js
-└── README.md
+├── package-lock.json
+└── requirements.txt          # Python 의존성 파일 (필요한 경우)
 ```
 ## 라이선스
 
