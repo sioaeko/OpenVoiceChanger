@@ -1,0 +1,9 @@
+torch
+numpy
+websockets
+fastapi
+uvicorn
+requests
+onnx
+onnxruntime
+scipy
