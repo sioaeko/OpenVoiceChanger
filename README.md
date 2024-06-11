@@ -1,6 +1,7 @@
 
 # OpenVoiceChanger(OVC) 
 
+[English](https://github.com/sioaeko/OpenVoiceChanger/blob/main/README.md) | [한국어](https://github.com/sioaeko/OpenVoiceChanger/blob/main/README_KR.md)
 This project is an application that transforms voice in real-time using WebSockets and ONNX/TensorFlow/PyTorch.
 
 By integrating the latest RVC (Realtime Voice Cloning) technology, it processes voice data in real-time and applies various voice effects.
