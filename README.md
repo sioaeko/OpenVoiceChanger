@@ -7,6 +7,10 @@ This project is an application that transforms voice in real-time using WebSocke
 
 By integrating the latest RVC (Realtime Voice Cloning) technology, it processes voice data in real-time and applies various voice effects.
 
+![GitHub](https://img.shields.io/github/license/sioaeko/OpenVoiceChanger)
+![GitHub stars](https://img.shields.io/github/stars/sioaeko/OpenVoiceChanger)
+![GitHub forks](https://img.shields.io/github/forks/sioaeko/OpenVoiceChanger)
+
 ## Features
 
 - Real-time audio processing using ONNX and TensorFlow.js
