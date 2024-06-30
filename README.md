@@ -115,3 +115,8 @@ This project is licensed under the MIT License. For more details, refer to the [
 
 - [ONNX Runtime](https://github.com/microsoft/onnxruntime)
 - [ngrok](https://ngrok.com/)
+- [torch](https://pytorch.org/)
+- [websockets](https://pypi.org/project/websockets/)
+- [numpy](https://numpy.org/)
+- [uvicorn](https://www.uvicorn.org/)
+- [fastapi](https://fastapi.tiangolo.com/ko/)
