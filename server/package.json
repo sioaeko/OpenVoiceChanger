@@ -1,0 +1,19 @@
+{
+  "name": "voice-changer-server",
+  "version": "1.0.0",
+  "description": "Server for real-time voice changer application",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js"
+  },
+  "dependencies": {
+    "express": "^4.17.1",
+    "ws": "^7.4.6",
+    "onnxruntime-node": "^1.8.0",
+    "@tensorflow/tfjs-node": "^3.6.0"
+  },
+  "devDependencies": {
+    "nodemon": "^2.0.7"
+  }
+}
