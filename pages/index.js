@@ -1,21 +1,29 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 
-export default function Home() {
+const VoiceChangerDesktop = () => {
   const [audioContext, setAudioContext] = useState(null);
   const [mediaStream, setMediaStream] = useState(null);
   const [audioChunks, setAudioChunks] = useState([]);
   const [recorder, setRecorder] = useState(null);
   const [socket, setSocket] = useState(null);
-  const [modelImage, setModelImage] = useState('model1.jpg');
+  const [serverRunning, setServerRunning] = useState(false);
+  const [modelInfo, setModelInfo] = useState({
+    onnx: null,
+    pytorch: null,
+    feature: null,
+    index: null
+  });
   const [settings, setSettings] = useState({
-    responseThreshold: 50,
-    toneSetting: 50,
-    indexRate: 50,
-    sampleLength: 50,
-    fadeLength: 50,
-    inferenceExtraTime: 50,
-    inputNoiseReduction: false,
-    outputNoiseReduction: false,
+    enablePyTorch: true,
+    halfPrecision: true,
+    framework: 'PyTorch',
+    audioInput: 'none',
+    audioOutput: 'none',
+  });
+  const [monitorData, setMonitorData] = useState({
+    vol: 0,
+    buf: 0,
+    res: 0
   });
 
   useEffect(() => {
@@ -27,10 +35,8 @@ export default function Home() {
     };
     initAudio();
 
-    const ws = new WebSocket('ws://your-ngrok-url.ngrok.io'); // 여기에 ngrok URL을 사용하세요.
-    ws.onopen = () => {
-      console.log('WebSocket connected');
-    };
+    const ws = new WebSocket('ws://your-ngrok-url.ngrok.io');
+    ws.onopen = () => console.log('WebSocket connected');
     ws.onmessage = (event) => {
       const { processedAudio, rvcProcessedAudio } = JSON.parse(event.data);
       playProcessedAudio(processedAudio);
@@ -38,14 +44,21 @@ export default function Home() {
     };
     setSocket(ws);
 
-    return () => {
-      ws.close();
-    };
+    return () => ws.close();
   }, []);
+
+  const startServer = () => {
+    setServerRunning(true);
+    // 실제 서버 시작 로직 추가
+  };
+
+  const stopServer = () => {
+    setServerRunning(false);
+    // 실제 서버 중지 로직 추가
+  };
 
   const startRecording = () => {
     if (!mediaStream) return;
-
     const mediaRecorder = new MediaRecorder(mediaStream);
     mediaRecorder.ondataavailable = (event) => {
       setAudioChunks((prev) => [...prev, event.data]);
@@ -56,7 +69,6 @@ export default function Home() {
 
   const stopRecording = () => {
     if (!recorder) return;
-
     recorder.stop();
     recorder.onstop = async () => {
       const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
@@ -68,7 +80,7 @@ export default function Home() {
 
   const sendAudioData = (audioBuffer) => {
     if (socket && socket.readyState === WebSocket.OPEN) {
-      socket.send(JSON.stringify({ audioBuffer, settings, model: document.getElementById('rvc-model').value }));
+      socket.send(JSON.stringify({ audioBuffer, settings, model: settings.framework }));
     }
   };
 
@@ -82,147 +94,146 @@ export default function Home() {
     });
   };
 
-  const handleSettingChange = (e) => {
-    const { name, value, type, checked } = e.target;
-    setSettings((prevSettings) => ({
-      ...prevSettings,
-      [name]: type === 'checkbox' ? checked : parseFloat(value),
-    }));
+  const handleSettingChange = (name, value) => {
+    setSettings(prev => ({ ...prev, [name]: value }));
   };
 
-  const updateModelImage = () => {
-    const modelSelect = document.getElementById('rvc-model');
-    const selectedOption = modelSelect.options[modelSelect.selectedIndex];
-    const imgSrc = selectedOption.getAttribute('data-img');
-    setModelImage(imgSrc);
+  const handleFileSelect = (type) => {
+    // 파일 선택 로직
+    console.log(`Selecting file for ${type}`);
+  };
+
+  const handleFileClear = (type) => {
+    setModelInfo(prev => ({ ...prev, [type]: null }));
+  };
+
+  const handleModelUpload = () => {
+    // 모델 업로드 로직
+    console.log('Uploading model');
   };
 
   return (
-    <div>
-      <header className="flex items-center justify-between h-16 px-4 md:px-6 border-b">
-        <a className="flex items-center gap-2" href="#">
-          <MicIcon className="w-6 h-6" />
-          <span className="font-bold text-lg">Voice Changer</span>
-        </a>
-        <nav className="hidden md:flex items-center gap-4">
-          <a className="text-sm font-medium hover:underline" href="#">
-            Home
-          </a>
-          <a className="text-sm font-medium hover:underline" href="#">
-            Presets
-          </a>
-          <a className="text-sm font-medium hover:underline" href="#">
-            Effects
-          </a>
-          <a className="text-sm font-medium hover:underline" href="#">
-            Settings
-          </a>
-        </nav>
-        <button className="md:hidden" size="icon" variant="ghost">
-          <MenuIcon className="w-6 h-6" />
-        </button>
-      </header>
-      <main className="p-4 md:p-8">
-        <div className="controls mb-8">
-          <div className="mb-4">
-            <button className="mr-2" onClick={startRecording}>Start Recording</button>
-            <button onClick={stopRecording}>Stop Recording</button>
+    <div className="font-sans p-4 bg-gray-100 min-h-screen">
+      <div className="bg-white shadow-lg rounded-lg p-6">
+        <div className="flex justify-between items-center mb-4">
+          <h1 className="text-3xl font-bold">Realtime Voice Changer Client</h1>
+          <span className="bg-yellow-200 px-2 py-1 rounded">for RVC</span>
+        </div>
+
+        <div className="mb-4">
+          <button className="bg-gray-200 px-3 py-1 rounded mr-2">clear setting</button>
+          <button className="bg-gray-200 px-3 py-1 rounded">re-select vc</button>
+        </div>
+
+        <div className="bg-gray-50 p-4 rounded mb-4">
+          <h2 className="font-bold mb-2">Server Control</h2>
+          <div className="flex items-center mb-2">
+            <span className="w-20">Start:</span>
+            <button 
+              className={`px-3 py-1 rounded mr-2 ${serverRunning ? 'bg-gray-300' : 'bg-green-500 text-white'}`}
+              onClick={startServer}
+              disabled={serverRunning}
+            >
+              start
+            </button>
+            <button 
+              className={`px-3 py-1 rounded ${serverRunning ? 'bg-red-500 text-white' : 'bg-gray-300'}`}
+              onClick={stopServer}
+              disabled={!serverRunning}
+            >
+              stop
+            </button>
           </div>
-          <div className="model-select mb-4">
-            <label htmlFor="rvc-model" className="mr-2">RVC Model:</label>
-            <select id="rvc-model" onChange={updateModelImage} className="mr-2">
-              <option value="model1" data-img="model1.jpg">Model 1</option>
-              <option value="model2" data-img="model2.jpg">Model 2</option>
-              <option value="model3" data-img="model3.jpg">Model 3</option>
-            </select>
-            <img id="model-image" src={modelImage} alt="Model Image" className="w-12 h-12 rounded" />
+          <div className="flex items-center">
+            <span className="w-20">monitor:</span>
+            <span className="mr-4">vol(rms): {monitorData.vol.toFixed(4)}</span>
+            <span className="mr-4">buf(ms): {monitorData.buf}</span>
+            <span className="mr-4">res(ms): {monitorData.res}</span>
+            <button className="bg-gray-200 px-2 py-1 rounded">more ≫</button>
           </div>
         </div>
-        <div className="card mb-8">
-          <div className="card-header">General Settings</div>
-          <div className="card-content">
-            <div className="mb-4">
-              <label htmlFor="responseThreshold" className="block">Response Threshold</label>
-              <input id="responseThreshold" name="responseThreshold" className="slider" type="range" min="0" max="100" value={settings.responseThreshold} onChange={handleSettingChange} />
+
+        <div className="bg-gray-50 p-4 rounded mb-4">
+          <h2 className="font-bold mb-2">Model Setting</h2>
+          <div className="grid grid-cols-3 gap-4">
+            <div>
+              <h3 className="font-semibold mb-2">Model Uploader</h3>
+              {['onnx', 'pytorch', 'feature', 'index'].map(type => (
+                <div key={type} className="mb-2">
+                  <span className="mr-2">{type}(.{type})</span>
+                  <button className="bg-gray-200 px-2 py-1 rounded mr-1" onClick={() => handleFileSelect(type)}>select</button>
+                  <button className="bg-gray-200 px-2 py-1 rounded" onClick={() => handleFileClear(type)}>clear</button>
+                  {type === 'pytorch' && (
+                    <button className="bg-gray-200 px-2 py-1 rounded ml-1">export onnx</button>
+                  )}
+                </div>
+              ))}
+              <button className="bg-blue-500 text-white px-3 py-1 rounded mt-2" onClick={handleModelUpload}>upload</button>
             </div>
-            <div className="mb-4">
-              <label htmlFor="toneSetting" className="block">Tone Setting</label>
-              <input id="toneSetting" name="toneSetting" className="slider" type="range" min="0" max="100" value={settings.toneSetting} onChange={handleSettingChange} />
+            <div>
+              <h3 className="font-semibold mb-2">Framework</h3>
+              <select 
+                value={settings.framework}
+                onChange={(e) => handleSettingChange('framework', e.target.value)}
+                className="w-full p-2 border rounded"
+              >
+                <option value="PyTorch">PyTorch</option>
+                <option value="ONNX">ONNX</option>
+              </select>
             </div>
-            <div className="mb-4">
-              <label htmlFor="indexRate" className="block">Index Rate</label>
-              <input id="indexRate" name="indexRate" className="slider" type="range" min="0" max="100" value={settings.indexRate} onChange={handleSettingChange} />
+            <div>
+              <label className="flex items-center mb-2">
+                <input
+                  type="checkbox"
+                  checked={settings.enablePyTorch}
+                  onChange={() => handleSettingChange('enablePyTorch', !settings.enablePyTorch)}
+                  className="mr-2"
+                />
+                enable PyTorch
+              </label>
+              <label className="flex items-center">
+                <input
+                  type="checkbox"
+                  checked={settings.halfPrecision}
+                  onChange={() => handleSettingChange('halfPrecision', !settings.halfPrecision)}
+                  className="mr-2"
+                />
+                half-precision
+              </label>
             </div>
           </div>
         </div>
-        <div className="card">
-          <div className="card-header">Performance Settings</div>
-          <div className="card-content">
-            <div className="mb-4">
-              <label htmlFor="sampleLength" className="block">Sample Length</label>
-              <input id="sampleLength" name="sampleLength" className="slider" type="range" min="0" max="100" value={settings.sampleLength} onChange={handleSettingChange} />
+
+        <div className="bg-gray-50 p-4 rounded">
+          <h2 className="font-bold mb-2">Device Setting</h2>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block mb-1">AudioInput</label>
+              <select 
+                value={settings.audioInput}
+                onChange={(e) => handleSettingChange('audioInput', e.target.value)}
+                className="w-full p-2 border rounded"
+              >
+                <option value="none">none</option>
+                {/* Add more audio input options here */}
+              </select>
             </div>
-            <div className="mb-4">
-              <label htmlFor="fadeLength" className="block">Fade Length</label>
-              <input id="fadeLength" name="fadeLength" className="slider" type="range" min="0" max="100" value={settings.fadeLength} onChange={handleSettingChange} />
-            </div>
-            <div className="mb-4">
-              <label htmlFor="inferenceExtraTime" className="block">Inference Extra Time</label>
-              <input id="inferenceExtraTime" name="inferenceExtraTime" className="slider" type="range" min="0" max="100" value={settings.inferenceExtraTime} onChange={handleSettingChange} />
-            </div>
-            <div className="mb-4">
-              <label htmlFor="inputNoiseReduction" className="block">Input Noise Reduction</label>
-              <input id="inputNoiseReduction" name="inputNoiseReduction" className="mr-2" type="checkbox" checked={settings.inputNoiseReduction} onChange={handleSettingChange} />
-            </div>
-            <div className="mb-4">
-              <label htmlFor="outputNoiseReduction" className="block">Output Noise Reduction</label>
-              <input id="outputNoiseReduction" name="outputNoiseReduction" className="mr-2" type="checkbox" checked={settings.outputNoiseReduction} onChange={handleSettingChange} />
+            <div>
+              <label className="block mb-1">AudioOutput</label>
+              <select 
+                value={settings.audioOutput}
+                onChange={(e) => handleSettingChange('audioOutput', e.target.value)}
+                className="w-full p-2 border rounded"
+              >
+                <option value="none">none</option>
+                {/* Add more audio output options here */}
+              </select>
             </div>
           </div>
         </div>
-      </main>
+      </div>
     </div>
   );
-}
+};
 
-function MenuIcon(props) {
-  return (
-    <svg
-      {...props}
-      xmlns="http://www.w3.org/2000/svg"
-      width="24"
-      height="24"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <line x1="4" x2="20" y1="12" y2="12" />
-      <line x1="4" x2="20" y1="6" y2="6" />
-      <line x1="4" x2="20" y1="18" y2="18" />
-    </svg>
-  );
-}
-
-function MicIcon(props) {
-  return (
-    <svg
-      {...props}
-      xmlns="http://www.w3.org/2000/svg"
-      width="24"
-      height="24"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
-      <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-      <line x1="12" x2="12" y1="19" y2="22" />
-    </svg>
-  );
-}
+export default VoiceChangerDesktop;
