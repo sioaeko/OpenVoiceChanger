@@ -14,7 +14,6 @@ By integrating the latest RVC (Realtime Voice Cloning) technology, it processes 
 ## Features
 
 - Real-time audio processing using ONNX and TensorFlow.js
-- WebSocket server for real-time communication
 - Express server for handling HTTP requests
 - Various voice effect settings
 - Supports real-time voice cloning using the RVC model
@@ -29,47 +28,45 @@ By integrating the latest RVC (Realtime Voice Cloning) technology, it processes 
 ## Installation
 
 ### 1. Clone the repository:
-
-   ```bash
-   git clone https://github.com/sioaeko/OpenVoiceChanger.git
-   cd OpenVoiceChanger
+   ```
+   git clone https://github.com/yourusername/realtime-voice-changer.git
+   cd realtime-voice-changer
    ```
 
-### 2. Install npm dependencies:
-
-   ```bash
-   npm install
+### 2. Install dependencies:
+   ```
+   chmod +x install_dependencies.sh
+   ./install_dependencies.sh
    ```
 
-### 3. Notes
+### 3. Start the servers:
+   - Node.js server:
+     ```
+     cd server
+     npm start
+     ```
+   - Python server:
+     ```
+     cd python_server
+     source venv/bin/activate
+     python python_server.py
+     ```
 
-   - Ensure the ONNX model file is located at ./path/to/your/model.onnx.
-   - If using PyTorch, ensure the Python environment is set up and dependencies are installed.
+### 4. Start the client:
+   ```
+   cd client
+   npm start
+   ```
 
-## Usage
-
-### 1. Start the Express server
-The Express server handles HTTP requests for audio data processing.
- ```bash
- npm start
- ```
-
-### 2. Start the WebSocket server
-The WebSocket server handles real-time audio processing.
-```bash
-npm run websocket
- ```
+5. Open a web browser and navigate to `http://localhost:3000`.
+   
 
 ### 3. Host the server without port forwarding using ngrok
 Use ngrok to host the local server externally without port forwarding.
 
 #### 1. Start ngrok for the HTTP server
 ```bash
-ngrok http 3001
- ```
-#### 2. Start ngrok for the WebSocket server
-```bash
-ngrok http 3002
+ngrok http 3000
  ```
 
 ### 4. Set up the frontend
@@ -81,24 +78,33 @@ const ws = new WebSocket('ws://your-ngrok-url.ngrok.io');
 
 ### 5. Project Structure
 ```plaintext
-OpenVoiceChanger/
-├── .github/
-│   └── workflows/
-│       └── node.js.yml      # GitHub Actions configuration file
-├── node_modules/             # npm dependencies directory (created during npm install)
-├── path/
-│   └── to/
-│       └── your/
-│           └── model.onnx    # ONNX model file
-├── venv/                     # Python virtual environment directory (created by install_dependencies.sh)
-├── .gitignore
-├── LICENSE
-├── README.md
-├── index.js                  # Server configuration file
-├── install_dependencies.sh   # Dependency installation script
-├── package.json
-├── package-lock.json
-└── requirements.txt          # Python dependencies file (if needed)
+realtime-voice-changer/
+│
+├── client/
+│   ├── src/
+│   │   ├── components/
+│   │   │   └── VoiceChangerDesktop.js
+│   │   ├── App.js
+│   │   └── index.js
+│   ├── public/
+│   └── package.json
+│
+├── server/
+│   ├── models/
+│   │   ├── rvc-model.onnx
+│   │   ├── voice-changer.onnx
+│   │   └── rvc_model.pt
+│   ├── rvc-model.js
+│   ├── onnx-model.js
+│   ├── index.js
+│   └── package.json
+│
+├── python_server/
+│   ├── python_server.py
+│   └── requirements.txt
+│
+├── install_dependencies.sh  # Python dependencies file (if needed)
+└── README.md 
 ```
 
 ## License
@@ -108,6 +114,4 @@ This project is licensed under the MIT License. For more details, refer to the [
 ## Thanks for
 
 - [ONNX Runtime](https://github.com/microsoft/onnxruntime)
-- [websocket](https://www.npmjs.com/package/ws)
-- [expressjs](https://expressjs.com/)
 - [ngrok](https://ngrok.com/)
