@@ -1,99 +1,99 @@
-# OpenVoiceChanger(OVC) 
+# Realtime Voice Changer
 
-이 프로젝트는 WebSockets와 ONNX/TensorFlow/PyTorch를 사용하여 실시간으로 음성을 변환하는 애플리케이션입니다.
+## 프로젝트 개요
 
-최신 RVC(Realtime Voice Cloning) 기술을 통합하여 음성 데이터를 실시간으로 처리하고 다양한 음성 효과를 적용할 수 있습니다.
+Realtime Voice Changer는 웹 기반의 실시간 음성 변조 애플리케이션입니다. 이 프로젝트는 React를 사용한 프론트엔드, Node.js 기반의 백엔드 서버, 그리고 Python으로 구현된 음성 처리 서버로 구성되어 있습니다.
 
-## 특징
+## 주요 기능
 
-- ONNX와 TensorFlow.js를 사용한 실시간 오디오 처리
-- 실시간 통신을 위한 WebSocket 서버
-- HTTP 요청 처리를 위한 Express 서버
-- 다양한 음성 효과 설정 가능
-- RVC 모델을 사용하여 실시간 음성 클로닝을 지원합니다.
+- 실시간 음성 입력 및 변조
+- 다양한 음성 변조 모델 지원 (RVC, ONNX)
+- 웹 인터페이스를 통한 쉬운 제어
+- 서버 상태 모니터링
 
-## 사전 요구 사항
+## 기술 스택
 
-- Node.js
-- npm (Node Package Manager)
-- Python (PyTorch 처리를 위해 필요)
-- ngrok
+- 프론트엔드: React
+- 백엔드: Node.js, Express
+- 음성 처리 서버: Python, FastAPI
+- 실시간 통신: WebSocket
+- 음성 처리: ONNX Runtime, PyTorch
 
-## 설치
+## 설치 방법
 
-### 1. 리포지토리 클론:
-
-   ```bash
-   git clone https://github.com/sioaeko/OpenVoiceChanger.git
-   cd OpenVoiceChanger
+1. 저장소 클론:
+   ```
+   git clone https://github.com/yourusername/realtime-voice-changer.git
+   cd realtime-voice-changer
    ```
 
+2. 의존성 설치:
+   ```
+   chmod +x install_dependencies.sh
+   ./install_dependencies.sh
+   ```
+   이 스크립트는 클라이언트, 서버, 그리고 Python 환경의 모든 의존성을 설치합니다.
 
-### 2. 의존성 npm 설치:
+## 실행 방법
 
-   ```bash
-   npm install
+1. Node.js 서버 시작:
+   ```
+   cd server
+   npm start
    ```
 
-### 3. 유의사항
+2. Python 서버 시작:
+   ```
+   cd python_server
+   source venv/bin/activate  # Windows의 경우: venv\Scripts\activate
+   python python_server.py
+   ```
 
-   - ONNX 모델 파일이 ./path/to/your/model.onnx에 있는지 확인합니다.
-   - PyTorch를 사용하는 경우, Python 환경이 설정되고 의존성이 설치되었는지 확인합니다.
+3. 클라이언트 시작:
+   ```
+   cd client
+   npm start
+   ```
 
-## 사용법
+4. 웹 브라우저에서 `http://localhost:3000` 접속
 
-### 1. Express 서버 실행
-Express 서버는 오디오 데이터 처리를 위한 HTTP 요청을 처리합니다.
- ```bash
- npm start
- ```
+## 사용 방법
 
-### 2. Websocket 서버 실행
-WebSocket 서버는 실시간 오디오 처리를 담당합니다.
-```bash
-npm run websocket
- ```
+1. 웹 인터페이스에서 "Server Control" 섹션의 "start" 버튼을 클릭하여 서버를 시작합니다.
+2. "Model Setting" 섹션에서 원하는 모델과 설정을 선택합니다.
+3. "Device Setting" 섹션에서 오디오 입력 및 출력 장치를 선택합니다.
+4. "Record" 버튼을 클릭하여 음성 입력을 시작합니다.
+5. 변조된 음성이 실시간으로 출력됩니다.
 
-### 3. ngrok을 이용하여 서버를 포트포워딩 없이 호스팅
-ngrok을 사용하여 로컬 서버를 포트포워딩 없이 외부에 호스팅할 수 있습니다.
+## 프로젝트 구조
 
-#### 1. HTTP 서버 을 위한 ngrok 시작
-```bash
-ngrok http 3001
- ```
-#### 2. websocket 서버 을 위한 ngrok 시작
-```bash
-ngrok http 3002
- ```
-
-### 4. 프론트엔드 세팅
-프론트엔드가 WebSocket 서버의 ngrok URL에 연결되었는지 확인합니다.
-```javascript
-// 프론트엔드 예제 코드
-const ws = new WebSocket('ws://your-ngrok-url.ngrok.io');
- ```
-
-### 5. 프로젝트 구조
-```ardunio
-OpenVoiceChanger/
-├── .github/
-│   └── workflows/
-│       └── node.js.yml      # GitHub Actions 설정 파일
-├── node_modules/             # npm 의존성 설치 디렉토리 (npm install 시 생성)
-├── path/
-│   └── to/
-│       └── your/
-│           └── model.onnx    # ONNX 모델 파일
-├── venv/                     # Python 가상 환경 디렉토리 (install_dependencies.sh 실행 시 생성)
-├── .gitignore
-├── LICENSE
-├── README.md
-├── index.js                  # 수정된 서버 설정 파일
-├── install_dependencies.sh   # 의존성 설치 스크립트 파일
-├── package.json
-├── package-lock.json
-└── requirements.txt          # Python 의존성 파일 (필요한 경우)
 ```
+realtime-voice-changer/
+│
+├── client/                 # React 프론트엔드
+│   ├── src/
+│   │   ├── components/
+│   │   │   └── VoiceChangerDesktop.js
+│   │   ├── App.js
+│   │   └── index.js
+│   └── package.json
+│
+├── server/                 # Node.js 백엔드
+│   ├── models/
+│   ├── rvc-model.js
+│   ├── onnx-model.js
+│   ├── index.js
+│   └── package.json
+│
+├── python_server/          # Python 음성 처리 서버
+│   ├── python_server.py
+│   └── requirements.txt
+│
+├── install_dependencies.sh
+└── README.md
+```
+
+
 ## 라이선스
 
 이 프로젝트는 MIT 라이선스에 따라 라이선스가 부여됩니다. 자세한 내용은 [LICENSE](https://github.com/sioaeko/OpenVoiceChanger/blob/main/LICENSE) 파일을 참조하십시오.
