@@ -1,110 +1,96 @@
+# Realtime Voice Changer
 
-# OpenVoiceChanger(OVC) 
+## Project Overview
 
-[English](https://github.com/sioaeko/OpenVoiceChanger/blob/main/README.md) | [한국어](https://github.com/sioaeko/OpenVoiceChanger/blob/main/README_KR.md)
+Realtime Voice Changer is a web-based application for real-time voice modification. This project consists of a React frontend, a Node.js backend server, and a Python-based voice processing server.
 
-This project is an application that transforms voice in real-time using WebSockets and ONNX/TensorFlow/PyTorch.
+## Key Features
 
-By integrating the latest RVC (Realtime Voice Cloning) technology, it processes voice data in real-time and applies various voice effects.
+- Real-time voice input and modification
+- Support for various voice modification models (RVC, ONNX)
+- Easy control through web interface
+- Server status monitoring
 
-![GitHub](https://img.shields.io/github/license/sioaeko/OpenVoiceChanger)
-![GitHub stars](https://img.shields.io/github/stars/sioaeko/OpenVoiceChanger)
-![GitHub forks](https://img.shields.io/github/forks/sioaeko/OpenVoiceChanger)
+## Tech Stack
 
-## Features
-
-- Real-time audio processing using ONNX and TensorFlow.js
-- Express server for handling HTTP requests
-- Various voice effect settings
-- Supports real-time voice cloning using the RVC model
-
-## Prerequisites
-
-- Node.js
-- npm (Node Package Manager)
-- Python (required for PyTorch processing)
-- ngrok
+- Frontend: React
+- Backend: Node.js, Express
+- Voice Processing Server: Python, FastAPI
+- Real-time Communication: WebSocket
+- Voice Processing: ONNX Runtime, PyTorch
 
 ## Installation
 
-### 1. Clone the repository:
+1. Clone the repository:
    ```
    git clone https://github.com/yourusername/realtime-voice-changer.git
    cd realtime-voice-changer
    ```
 
-### 2. Install dependencies:
+2. Install dependencies:
    ```
    chmod +x install_dependencies.sh
    ./install_dependencies.sh
    ```
+   This script installs all dependencies for the client, server, and Python environment.
 
-### 3. Start the servers:
-   - Node.js server:
-     ```
-     cd server
-     npm start
-     ```
-   - Python server:
-     ```
-     cd python_server
-     source venv/bin/activate
-     python python_server.py
-     ```
+## Running the Application
 
-### 4. Start the client:
+1. Start the Node.js server:
+   ```
+   cd server
+   npm start
+   ```
+
+2. Start the Python server:
+   ```
+   cd python_server
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   python python_server.py
+   ```
+
+3. Start the client:
    ```
    cd client
    npm start
    ```
 
-5. Open a web browser and navigate to `http://localhost:3000`.
-   
+4. Access the web interface at `http://localhost:3000`
 
-### 3. Host the server without port forwarding using ngrok
-Use ngrok to host the local server externally without port forwarding.
+## Usage
 
-#### 1. Start ngrok for the HTTP server
-```bash
-ngrok http 3000
- ```
+1. Click the "start" button in the "Server Control" section of the web interface to start the server.
+2. Select the desired model and settings in the "Model Setting" section.
+3. Choose audio input and output devices in the "Device Setting" section.
+4. Click the "Record" button to start voice input.
+5. The modified voice will be output in real-time.
 
-### 4. Set up the frontend
-Ensure the frontend is connected to the ngrok URL of the WebSocket server.
-```javascript
-// Frontend example code
-const ws = new WebSocket('ws://your-ngrok-url.ngrok.io');
- ```
+## Project Structure
 
-### 5. Project Structure
-```plaintext
+```
 realtime-voice-changer/
 │
-├── client/
+├── client/                 # React frontend
 │   ├── src/
 │   │   ├── components/
 │   │   │   └── VoiceChangerDesktop.js
 │   │   ├── App.js
 │   │   └── index.js
-│   ├── public/
 │   └── package.json
 │
-├── server/
+├── server/                 # Node.js backend
 │   ├── models/
-│   │   ├── rvc-model.onnx
-│   │   ├── voice-changer.onnx
-│   │   └── rvc_model.pt
 │   ├── rvc-model.js
 │   ├── onnx-model.js
 │   ├── index.js
 │   └── package.json
 │
-├── python_server/
+├── python_server/          # Python voice processing server
 │   ├── python_server.py
 │   └── requirements.txt
 │
-├── install_dependencies.sh  # Python dependencies file (if needed)
-└── README.md 
+├── install_dependencies.sh
+└── README.md
 ```
 
 ## License
