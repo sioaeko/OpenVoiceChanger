@@ -31,8 +31,8 @@ Realtime Voice Changer is a web-based application for real-time voice modificati
 
 1. Clone the repository:
    ```
-   git clone https://github.com/yourusername/realtime-voice-changer.git
-   cd realtime-voice-changer
+   git clone https://github.com/sioaeko/OpenVoiceChanger.git
+   cd OpenVoiceChanger
    ```
 
 2. Install dependencies:
@@ -76,7 +76,7 @@ Realtime Voice Changer is a web-based application for real-time voice modificati
 ## Project Structure
 
 ```
-realtime-voice-changer/
+OpenVoiceChanger/
 │
 ├── client/                 # React frontend
 │   ├── src/
