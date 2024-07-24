@@ -29,7 +29,7 @@ Realtime Voice Changer는 웹 기반의 실시간 음성 변조 애플리케이�
 
 1. 저장소 클론:
    ```
-   git clone https://github.com/yourusername/realtime-voice-changer.git
+   git clone https://github.com/sioaeko/realtime-voice-changer.git
    cd realtime-voice-changer
    ```
 
