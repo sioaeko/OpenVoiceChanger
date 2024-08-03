@@ -4,7 +4,7 @@
 
 ![스크린샷, 2024-06-30 21-59-50](https://github.com/sioaeko/OpenVoiceChanger/assets/101755125/b8dc7a42-c7f8-4729-871d-dbd0e1d370d3)
 
-[English](https://github.com/sioaeko/OpenVoiceChanger/blob/main/README.md) | [한국어](https://github.com/sioaeko/OpenVoiceChanger/blob/main/README_KR.md)
+[English](https://github.com/sioaeko/OpenVoiceChanger/blob/main/README.md) | [한국어](https://github.com/sioaeko/OpenVoiceChanger/blob/main/README_KR.md) | [日本語](https://github.com/sioaeko/OpenVoiceChanger/blob/main/README_JP.md)
 
 Realtime Voice Changer is a web-based application for real-time voice modification. This project consists of a React frontend, a Node.js backend server, and a Python-based voice processing server.
 
