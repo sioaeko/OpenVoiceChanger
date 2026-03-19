@@ -1,0 +1,92 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-slate-950 text-white antialiased;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+      'Helvetica Neue', Arial, sans-serif;
+  }
+
+  * {
+    @apply transition-colors duration-150;
+  }
+}
+
+/* Dark scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-slate-900;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-slate-700 rounded-full;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-slate-600;
+}
+
+/* Firefox scrollbar */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: theme('colors.slate.700') theme('colors.slate.900');
+}
+
+/* Smooth transitions for interactive elements */
+button,
+select,
+input[type='range'] {
+  @apply transition-all duration-200 ease-in-out;
+}
+
+/* Range input styling */
+input[type='range'] {
+  @apply appearance-none bg-transparent cursor-pointer;
+}
+
+input[type='range']::-webkit-slider-track {
+  @apply h-1.5 rounded-full bg-slate-700;
+}
+
+input[type='range']::-webkit-slider-thumb {
+  @apply appearance-none w-4 h-4 rounded-full bg-blue-500 -mt-[5px]
+    shadow-lg shadow-blue-500/30;
+}
+
+input[type='range']::-webkit-slider-thumb:hover {
+  @apply bg-blue-400 scale-110;
+}
+
+input[type='range']::-moz-range-track {
+  @apply h-1.5 rounded-full bg-slate-700 border-0;
+}
+
+input[type='range']::-moz-range-thumb {
+  @apply w-4 h-4 rounded-full bg-blue-500 border-0
+    shadow-lg shadow-blue-500/30;
+}
+
+input[type='range']::-moz-range-thumb:hover {
+  @apply bg-blue-400 scale-110;
+}
+
+/* Drag & drop area animation */
+@keyframes pulse-border {
+  0%,
+  100% {
+    border-color: theme('colors.blue.500');
+  }
+  50% {
+    border-color: theme('colors.blue.300');
+  }
+}
+
+.drag-active {
+  animation: pulse-border 1.5s ease-in-out infinite;
+}

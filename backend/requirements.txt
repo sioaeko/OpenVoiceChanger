@@ -1,0 +1,9 @@
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+python-multipart>=0.0.18
+websockets>=14.0
+numpy>=1.26.0
+scipy>=1.14.0
+onnxruntime>=1.19.0
+torch>=2.4.0
+pydantic-settings>=2.6.0
