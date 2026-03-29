@@ -2,8 +2,17 @@ fastapi>=0.115.0
 uvicorn[standard]>=0.32.0
 python-multipart>=0.0.18
 websockets>=14.0
-numpy>=1.26.0
+numpy>=1.26.0,<2.0
 scipy>=1.14.0
-onnxruntime>=1.19.0
+onnxruntime==1.23.2
 torch>=2.4.0
 pydantic-settings>=2.6.0
+fairseq @ git+https://github.com/Tps-F/fairseq.git@main
+faiss-cpu>=1.13.2,<2.0.0
+librosa>=0.10.2,<0.11.0
+numba==0.58.1
+praat-parselmouth>=0.4.7,<0.5.0
+pyworld>=0.3.5,<0.4.0
+soundfile>=0.12.1,<0.13.0
+torchaudio>=2.11.0
+torchcrepe>=0.0.22,<0.0.23
