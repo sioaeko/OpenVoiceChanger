@@ -1,4 +1,4 @@
-.PHONY: dev-backend dev-frontend dev install build docker docker-gpu clean
+.PHONY: dev-backend dev-frontend dev install build clean
 
 dev-backend:
 	PYTHONPATH=. uvicorn backend.main:app --reload
@@ -11,16 +11,11 @@ dev:
 
 install:
 	pip install -r backend/requirements.txt
+	pip install --no-deps git+https://github.com/RVC-Project/Retrieval-based-Voice-Conversion
 	cd frontend && npm install
 
 build:
 	cd frontend && npm run build
-
-docker:
-	docker compose up --build
-
-docker-gpu:
-	docker compose --profile gpu up --build
 
 clean:
 	rm -rf frontend/node_modules frontend/dist __pycache__ backend/__pycache__

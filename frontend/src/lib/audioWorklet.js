@@ -33,16 +33,24 @@ class PlaybackProcessor extends AudioWorkletProcessor {
   constructor(options) {
     super();
     const chunkSize = options.processorOptions?.chunkSize || 4096;
-    this.ringBufferSize = 8 * chunkSize;
+    this.primeBufferSize = chunkSize;
+    this.targetBufferSize = 2 * chunkSize;
+    this.ringBufferSize = 6 * chunkSize;
     this.ringBuffer = new Float32Array(this.ringBufferSize);
     this.readIndex = 0;
     this.writeIndex = 0;
     this.availableSamples = 0;
+    this.isPrimed = false;
+    this.lastSample = 0;
 
     this.port.onmessage = (event) => {
       const data = event.data;
       if (data instanceof Float32Array) {
         for (let i = 0; i < data.length; i++) {
+          if (this.availableSamples >= this.ringBufferSize) {
+            this.readIndex = (this.readIndex + 1) % this.ringBufferSize;
+            this.availableSamples -= 1;
+          }
           this.ringBuffer[this.writeIndex] = data[i];
           this.writeIndex = (this.writeIndex + 1) % this.ringBufferSize;
         }
@@ -50,6 +58,15 @@ class PlaybackProcessor extends AudioWorkletProcessor {
           this.availableSamples + data.length,
           this.ringBufferSize
         );
+
+        while (this.availableSamples > this.targetBufferSize) {
+          this.readIndex = (this.readIndex + 1) % this.ringBufferSize;
+          this.availableSamples -= 1;
+        }
+
+        if (!this.isPrimed && this.availableSamples >= this.primeBufferSize) {
+          this.isPrimed = true;
+        }
       }
     };
   }
@@ -60,17 +77,33 @@ class PlaybackProcessor extends AudioWorkletProcessor {
 
     const channelData = output[0];
 
-    if (this.availableSamples >= channelData.length) {
-      for (let i = 0; i < channelData.length; i++) {
-        channelData[i] = this.ringBuffer[this.readIndex];
-        this.readIndex = (this.readIndex + 1) % this.ringBufferSize;
-      }
-      this.availableSamples -= channelData.length;
-    } else {
-      // Buffer underrun — output silence
+    if (!this.isPrimed && this.availableSamples < this.primeBufferSize) {
       for (let i = 0; i < channelData.length; i++) {
         channelData[i] = 0;
       }
+    } else {
+      for (let i = 0; i < channelData.length; i++) {
+        if (this.availableSamples <= 0) {
+          this.isPrimed = false;
+          let sample = this.lastSample;
+          for (let j = i; j < channelData.length; j++) {
+            sample *= 0.985;
+            channelData[j] = sample;
+          }
+          this.lastSample = sample;
+          break;
+        }
+
+        const sample = this.ringBuffer[this.readIndex];
+        channelData[i] = sample;
+        this.lastSample = sample;
+        this.readIndex = (this.readIndex + 1) % this.ringBufferSize;
+        this.availableSamples -= 1;
+      }
+    }
+
+    if (!this.isPrimed && this.availableSamples === 0) {
+      this.lastSample = 0;
     }
 
     // Copy mono to all output channels

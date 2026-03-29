@@ -1,56 +1,60 @@
 import React from 'react';
 
-export default function Layout({ children }) {
+export default function Layout({ children, headerActions = null }) {
   return (
-    <div className="min-h-screen bg-slate-950 text-white flex flex-col">
-      {/* Header */}
-      <header className="relative border-b border-slate-800/50">
-        <div className="absolute inset-0 bg-gradient-to-r from-blue-600/10 via-purple-600/10 to-emerald-600/10" />
-        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center gap-3">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shadow-lg shadow-blue-500/20">
-              <svg
-                className="w-4 h-4 text-white"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-                <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                <line x1="12" y1="19" x2="12" y2="23" />
-                <line x1="8" y1="23" x2="16" y2="23" />
-              </svg>
+    <div className="min-h-screen text-zinc-50">
+      <div className="pointer-events-none fixed inset-0 overflow-hidden">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(91,214,255,0.16),transparent_28%),radial-gradient(circle_at_top_right,rgba(248,191,120,0.12),transparent_24%),linear-gradient(180deg,#08090d_0%,#0f131a_45%,#0a0d12_100%)]" />
+        <div
+          className="absolute inset-0 opacity-[0.08]"
+          style={{
+            backgroundImage: 'linear-gradient(rgba(255,255,255,0.06) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.06) 1px, transparent 1px)',
+            backgroundSize: '34px 34px',
+            maskImage: 'linear-gradient(180deg, rgba(0,0,0,0.75), rgba(0,0,0,0.15))',
+          }}
+        />
+      </div>
+
+      <div className="relative flex min-h-screen flex-col">
+        <header className="border-b border-white/10">
+          <div className="mx-auto flex w-full max-w-[1480px] flex-col gap-6 px-4 py-6 sm:px-6 lg:flex-row lg:items-end lg:justify-between lg:px-8">
+            <div className="min-w-0">
+              <div className="space-y-2">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.34em] text-zinc-500">
+                  Local RVC Console
+                </p>
+                <div>
+                  <h1 className="text-3xl font-semibold tracking-[-0.06em] text-zinc-50 sm:text-[2.8rem]">
+                    OpenVoiceChanger
+                  </h1>
+                  <p className="mt-2 max-w-2xl text-sm text-zinc-400">
+                    Route one microphone through a live model, keep the monitor path visible,
+                    and tune pitch without leaving the workspace.
+                  </p>
+                </div>
+              </div>
             </div>
-            <h1 className="text-xl font-bold tracking-tight">
-              <span className="bg-gradient-to-r from-blue-400 via-purple-400 to-emerald-400 bg-clip-text text-transparent">
-                OpenVoiceChanger
-              </span>
-            </h1>
+
+            {headerActions ? (
+              <div className="flex flex-shrink-0 items-center justify-start lg:justify-end">
+                {headerActions}
+              </div>
+            ) : null}
           </div>
-          <span className="text-xs text-slate-500 font-medium px-2 py-0.5 rounded-full border border-slate-800 bg-slate-900/50">
-            v1.0
-          </span>
-        </div>
-      </header>
+        </header>
 
-      {/* Main Content */}
-      <main className="flex-1">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          {children}
-        </div>
-      </main>
+        <main className="flex-1">
+          <div className="mx-auto w-full max-w-[1480px] px-4 py-6 sm:px-6 lg:px-8">
+            {children}
+          </div>
+        </main>
 
-      {/* Footer */}
-      <footer className="border-t border-slate-800/50 py-3">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <p className="text-xs text-slate-600 text-center">
-            OpenVoiceChanger — Real-time AI voice conversion
+        <footer className="border-t border-white/10 py-4">
+          <p className="mx-auto w-full max-w-[1480px] px-4 text-xs uppercase tracking-[0.26em] text-zinc-600 sm:px-6 lg:px-8">
+            Monitoring surface for local real-time RVC streaming
           </p>
-        </div>
-      </footer>
+        </footer>
+      </div>
     </div>
   );
 }

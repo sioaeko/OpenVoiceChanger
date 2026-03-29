@@ -38,10 +38,15 @@ async def audio_websocket(websocket: WebSocket) -> None:
 
     # Connection-local state
     conn_state: dict = {
+        "stream_id": str(client_id),
         "sample_rate": 40000,
         "chunk_size": 4096,
         "pitch_shift": 0.0,
-        "f0_method": "dio",
+        "f0_method": "pm",
+        "index_rate": None,
+        "filter_radius": None,
+        "rms_mix_rate": None,
+        "protect": None,
         "configured": False,
         "last_status_time": time.monotonic(),
         "latency_ms": 0.0,
@@ -85,6 +90,8 @@ async def audio_websocket(websocket: WebSocket) -> None:
             await websocket.close(code=1011, reason="Internal server error")
         except Exception:
             pass
+    finally:
+        model_manager.release_stream(conn_state["stream_id"])
 
 
 async def _receive_config(websocket: WebSocket, conn_state: dict) -> dict | None:
@@ -123,6 +130,14 @@ async def _receive_config(websocket: WebSocket, conn_state: dict) -> dict | None
         conn_state["pitch_shift"] = float(config["pitch_shift"])
     if "f0_method" in config:
         conn_state["f0_method"] = str(config["f0_method"])
+    if "index_rate" in config:
+        conn_state["index_rate"] = float(config["index_rate"])
+    if "filter_radius" in config:
+        conn_state["filter_radius"] = int(config["filter_radius"])
+    if "rms_mix_rate" in config:
+        conn_state["rms_mix_rate"] = float(config["rms_mix_rate"])
+    if "protect" in config:
+        conn_state["protect"] = float(config["protect"])
 
     return config
 
@@ -144,8 +159,14 @@ async def _handle_binary_frame(
 
     try:
         settings = {
+            "stream_id": conn_state["stream_id"],
             "pitch_shift": conn_state["pitch_shift"],
             "f0_method": conn_state["f0_method"],
+            "sample_rate": conn_state["sample_rate"],
+            "index_rate": conn_state["index_rate"],
+            "filter_radius": conn_state["filter_radius"],
+            "rms_mix_rate": conn_state["rms_mix_rate"],
+            "protect": conn_state["protect"],
         }
         processed = await asyncio.to_thread(
             model_manager.process_audio, audio, settings
@@ -177,6 +198,18 @@ def _handle_json_message(text: str, conn_state: dict) -> None:
     if "f0_method" in data:
         conn_state["f0_method"] = str(data["f0_method"])
         logger.debug("Updated f0_method: %s", conn_state["f0_method"])
+
+    if "index_rate" in data:
+        conn_state["index_rate"] = float(data["index_rate"])
+
+    if "filter_radius" in data:
+        conn_state["filter_radius"] = int(data["filter_radius"])
+
+    if "rms_mix_rate" in data:
+        conn_state["rms_mix_rate"] = float(data["rms_mix_rate"])
+
+    if "protect" in data:
+        conn_state["protect"] = float(data["protect"])
 
     if "sample_rate" in data:
         conn_state["sample_rate"] = int(data["sample_rate"])

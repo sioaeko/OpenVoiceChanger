@@ -12,10 +12,11 @@ from backend.services.rvc_processor import RvcProcessor
 
 logger = logging.getLogger(__name__)
 
-ALLOWED_EXTENSIONS = {".onnx", ".pth"}
+ALLOWED_EXTENSIONS = {".onnx", ".pth", ".pt"}
 MODEL_TYPE_MAP = {
     ".onnx": "onnx",
     ".pth": "rvc",
+    ".pt": "rvc",
 }
 MAX_MODEL_SIZE = 4 * 1024 * 1024 * 1024  # 4 GB
 
@@ -184,6 +185,12 @@ class ModelManager:
             self._active_model_name = name
             self._active_processor = processor
 
+        if isinstance(processor, RvcProcessor):
+            try:
+                processor.warm_up()
+            except Exception as exc:
+                logger.warning("RVC warm-up failed for %s: %s", name, exc)
+
         logger.info("Activated model: %s (type: %s)", name, model_type)
         return {
             "name": name,
@@ -248,10 +255,31 @@ class ModelManager:
         pitch_shift = settings.get("pitch_shift", 0.0)
 
         if isinstance(processor, RvcProcessor):
-            f0_method = settings.get("f0_method", "dio")
-            return processor.process(audio, pitch_shift=pitch_shift, f0_method=f0_method)
+            f0_method = settings.get("f0_method", "pm")
+            sample_rate = int(settings.get("sample_rate", 40000))
+            stream_id = settings.get("stream_id")
+            return processor.process(
+                audio,
+                pitch_shift=pitch_shift,
+                f0_method=f0_method,
+                sample_rate=sample_rate,
+                stream_id=stream_id,
+                index_rate=settings.get("index_rate"),
+                filter_radius=settings.get("filter_radius"),
+                rms_mix_rate=settings.get("rms_mix_rate"),
+                protect=settings.get("protect"),
+            )
         else:
             return processor.process(audio, pitch_shift=pitch_shift)
+
+    def release_stream(self, stream_id: str | int | None) -> None:
+        """Release any per-stream state held by the active processor."""
+        if stream_id is None:
+            return
+        with self._lock:
+            processor = self._active_processor
+        if isinstance(processor, RvcProcessor):
+            processor.release_stream(stream_id)
 
     @property
     def active_model_name(self) -> str | None:

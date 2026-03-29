@@ -1,6 +1,9 @@
 import { useCallback, useRef, useState } from 'react';
 import { WS_URL, SAMPLE_RATE, CHUNK_SIZE } from '../lib/constants';
 
+const MAX_IN_FLIGHT_AUDIO_FRAMES = 1;
+const MAX_PENDING_AUDIO_FRAMES = 2;
+
 export default function useWebSocket() {
   const [status, setStatus] = useState('disconnected');
   const [latency, setLatency] = useState(0);
@@ -12,6 +15,48 @@ export default function useWebSocket() {
   const reconnectDelayRef = useRef(1000);
   const intentionalCloseRef = useRef(false);
   const sendTimestampsRef = useRef(new Map());
+  const pendingAudioFramesRef = useRef([]);
+
+  const sendBinaryFrame = useCallback((ws, buffer, seqNum) => {
+    sendTimestampsRef.current.set(seqNum, performance.now());
+
+    const headerSize = 8;
+    const frame = new ArrayBuffer(headerSize + buffer.byteLength);
+    const view = new DataView(frame);
+    view.setUint32(0, seqNum, true);
+    view.setUint32(4, 0, true);
+
+    const pcm = new Float32Array(frame, headerSize);
+    pcm.set(buffer);
+
+    ws.send(frame);
+  }, []);
+
+  const enqueuePendingAudio = useCallback((buffer, seqNum) => {
+    const nextQueue = [
+      ...pendingAudioFramesRef.current,
+      { buffer: buffer.slice(0), seqNum },
+    ];
+
+    while (nextQueue.length > MAX_PENDING_AUDIO_FRAMES) {
+      nextQueue.shift();
+    }
+
+    pendingAudioFramesRef.current = nextQueue;
+  }, []);
+
+  const flushPendingAudio = useCallback(() => {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+
+    while (
+      sendTimestampsRef.current.size < MAX_IN_FLIGHT_AUDIO_FRAMES
+      && pendingAudioFramesRef.current.length > 0
+    ) {
+      const next = pendingAudioFramesRef.current.shift();
+      sendBinaryFrame(ws, next.buffer, next.seqNum);
+    }
+  }, [sendBinaryFrame]);
 
   const clearReconnectTimer = useCallback(() => {
     if (reconnectTimerRef.current) {
@@ -45,43 +90,48 @@ export default function useWebSocket() {
         setStatus('connected');
         reconnectDelayRef.current = 1000;
         clearReconnectTimer();
+        pendingAudioFramesRef.current = [];
+        sendTimestampsRef.current.clear();
 
-        // Send initial config (snake_case keys to match backend)
-        ws.send(JSON.stringify({ sample_rate: SAMPLE_RATE, chunk_size: CHUNK_SIZE }));
+        ws.send(JSON.stringify({
+          sample_rate: SAMPLE_RATE,
+          chunk_size: CHUNK_SIZE,
+          f0_method: 'pm',
+        }));
       };
 
       ws.onmessage = (event) => {
         if (event.data instanceof ArrayBuffer) {
-          if (event.data.byteLength < 8) return; // Malformed frame
-          // Binary audio frame: 8-byte header (uint32 seq + uint32 reserved) + float32 PCM
+          if (event.data.byteLength < 8) return;
+
           const view = new DataView(event.data);
           const seqNum = view.getUint32(0, true);
-
-          // Calculate latency
           const sendTime = sendTimestampsRef.current.get(seqNum);
+
           if (sendTime) {
             setLatency(performance.now() - sendTime);
             sendTimestampsRef.current.delete(seqNum);
           }
 
-          // Clean up old timestamps
+          flushPendingAudio();
+
           if (sendTimestampsRef.current.size > 100) {
             const keys = [...sendTimestampsRef.current.keys()].sort((a, b) => a - b);
-            for (let i = 0; i < keys.length - 50; i++) {
+            for (let i = 0; i < keys.length - 50; i += 1) {
               sendTimestampsRef.current.delete(keys[i]);
             }
           }
 
           const pcmData = new Float32Array(event.data, 8);
           onAudioReceivedRef.current?.(pcmData, seqNum);
-        } else {
-          // JSON message
-          try {
-            const msg = JSON.parse(event.data);
-            onSettingsResponseRef.current?.(msg);
-          } catch {
-            // Ignore malformed JSON
-          }
+          return;
+        }
+
+        try {
+          const msg = JSON.parse(event.data);
+          onSettingsResponseRef.current?.(msg);
+        } catch {
+          // Ignore malformed JSON payloads.
         }
       };
 
@@ -91,6 +141,8 @@ export default function useWebSocket() {
 
       ws.onclose = () => {
         wsRef.current = null;
+        pendingAudioFramesRef.current = [];
+        sendTimestampsRef.current.clear();
         if (!intentionalCloseRef.current) {
           setStatus('disconnected');
           scheduleReconnect();
@@ -104,11 +156,13 @@ export default function useWebSocket() {
       setStatus('error');
       scheduleReconnect();
     }
-  }, [clearReconnectTimer, scheduleReconnect]);
+  }, [clearReconnectTimer, flushPendingAudio, scheduleReconnect]);
 
   const disconnect = useCallback(() => {
     intentionalCloseRef.current = true;
     clearReconnectTimer();
+    pendingAudioFramesRef.current = [];
+    sendTimestampsRef.current.clear();
     if (wsRef.current) {
       wsRef.current.close();
       wsRef.current = null;
@@ -120,21 +174,13 @@ export default function useWebSocket() {
     const ws = wsRef.current;
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
 
-    // Record send time for latency measurement
-    sendTimestampsRef.current.set(seqNum, performance.now());
+    if (sendTimestampsRef.current.size >= MAX_IN_FLIGHT_AUDIO_FRAMES) {
+      enqueuePendingAudio(buffer, seqNum);
+      return;
+    }
 
-    // 8-byte header: uint32 seq + uint32 reserved, then float32 PCM
-    const headerSize = 8;
-    const frame = new ArrayBuffer(headerSize + buffer.byteLength);
-    const view = new DataView(frame);
-    view.setUint32(0, seqNum, true);
-    view.setUint32(4, 0, true); // reserved
-
-    const pcm = new Float32Array(frame, headerSize);
-    pcm.set(buffer);
-
-    ws.send(frame);
-  }, []);
+    sendBinaryFrame(ws, buffer, seqNum);
+  }, [enqueuePendingAudio, sendBinaryFrame]);
 
   const sendSettings = useCallback((settings) => {
     const ws = wsRef.current;

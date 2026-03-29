@@ -16,6 +16,8 @@ models/*.onnx
 models/*.pth
 models/*.pt
 models/*.index
+models/assets/*
+!models/assets/.gitkeep
 !models/.gitkeep
 
 # IDE
@@ -37,3 +39,4 @@ docker-compose.override.yml
 
 # Logs
 *.log
+tmp/

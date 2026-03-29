@@ -7,6 +7,7 @@ export default function useAudioPipeline(wsHook) {
   const [outputLevel, setOutputLevel] = useState(0);
 
   const audioContextRef = useRef(null);
+  const captureSinkRef = useRef(null);
   const streamRef = useRef(null);
   const sourceRef = useRef(null);
   const captureNodeRef = useRef(null);
@@ -43,49 +44,49 @@ export default function useAudioPipeline(wsHook) {
   const start = useCallback(
     async (inputDeviceId, outputDeviceId) => {
       try {
-        // Create AudioContext
-        const audioContext = new AudioContext({ sampleRate: SAMPLE_RATE });
+        const audioContext = new AudioContext({
+          sampleRate: SAMPLE_RATE,
+          latencyHint: 'interactive',
+        });
         audioContextRef.current = audioContext;
 
-        // Handle output device if supported and specified
         if (outputDeviceId && audioContext.setSinkId) {
           await audioContext.setSinkId(outputDeviceId);
         }
 
-        // Get user media
         const constraints = {
           audio: {
             echoCancellation: false,
             noiseSuppression: false,
             autoGainControl: false,
+            channelCount: 1,
+            sampleRate: SAMPLE_RATE,
             ...(inputDeviceId ? { deviceId: { exact: inputDeviceId } } : {}),
           },
         };
         const stream = await navigator.mediaDevices.getUserMedia(constraints);
         streamRef.current = stream;
 
-        // Create source from stream
         const source = audioContext.createMediaStreamSource(stream);
         sourceRef.current = source;
 
-        // Load worklet modules (served from public/ as a separate file,
-        // not bundled — AudioWorklet requires a plain JS file URL)
         await audioContext.audioWorklet.addModule('/audioWorklet.js');
 
-        // Create capture worklet node
         const captureNode = new AudioWorkletNode(audioContext, 'capture-processor', {
           processorOptions: { chunkSize: CHUNK_SIZE },
         });
         captureNodeRef.current = captureNode;
 
-        // Create playback worklet node
         const playbackNode = new AudioWorkletNode(audioContext, 'playback-processor', {
           processorOptions: { chunkSize: CHUNK_SIZE },
           outputChannelCount: [1],
         });
         playbackNodeRef.current = playbackNode;
 
-        // Create analysers
+        const captureSink = audioContext.createGain();
+        captureSink.gain.value = 0;
+        captureSinkRef.current = captureSink;
+
         const inputAnalyser = audioContext.createAnalyser();
         inputAnalyser.fftSize = 256;
         inputAnalyser.smoothingTimeConstant = 0.8;
@@ -96,15 +97,13 @@ export default function useAudioPipeline(wsHook) {
         outputAnalyser.smoothingTimeConstant = 0.8;
         outputAnalyserRef.current = outputAnalyser;
 
-        // Connect pipeline:
-        // source -> inputAnalyser -> captureNode (mic -> worklet -> WS)
-        // playbackNode -> outputAnalyser -> destination (WS -> worklet -> speakers)
         source.connect(inputAnalyser);
         inputAnalyser.connect(captureNode);
+        captureNode.connect(captureSink);
+        captureSink.connect(audioContext.destination);
         playbackNode.connect(outputAnalyser);
         outputAnalyser.connect(audioContext.destination);
 
-        // Capture: worklet sends audio chunks to WS
         seqNumRef.current = 0;
         captureNode.port.onmessage = (event) => {
           const buffer = event.data;
@@ -113,22 +112,19 @@ export default function useAudioPipeline(wsHook) {
           }
         };
 
-        // Playback: WS received audio goes to playback worklet
         wsHook.setOnAudioReceived((pcmData) => {
           if (playbackNodeRef.current) {
             playbackNodeRef.current.port.postMessage(pcmData);
           }
         });
 
-        // Start level metering
+        await audioContext.resume();
         animFrameRef.current = requestAnimationFrame(updateLevels);
 
         setIsRunning(true);
       } catch (err) {
         console.error('Failed to start audio pipeline:', err);
-        // Clean up on failure
         stop();
-        // Provide user-friendly error messages
         if (err.name === 'NotAllowedError') {
           throw new Error('Microphone permission denied. Please allow microphone access in your browser settings and try again.');
         }
@@ -145,18 +141,19 @@ export default function useAudioPipeline(wsHook) {
   );
 
   const stop = useCallback(() => {
-    // Stop level metering
     if (animFrameRef.current) {
       cancelAnimationFrame(animFrameRef.current);
       animFrameRef.current = null;
     }
 
-    // Disconnect nodes
     try {
       sourceRef.current?.disconnect();
     } catch { /* already disconnected */ }
     try {
       captureNodeRef.current?.disconnect();
+    } catch { /* already disconnected */ }
+    try {
+      captureSinkRef.current?.disconnect();
     } catch { /* already disconnected */ }
     try {
       playbackNodeRef.current?.disconnect();
@@ -168,14 +165,14 @@ export default function useAudioPipeline(wsHook) {
       outputAnalyserRef.current?.disconnect();
     } catch { /* already disconnected */ }
 
-    // Stop media stream tracks
-    streamRef.current?.getTracks().forEach((track) => track.stop());
+    captureNodeRef.current?.port?.close?.();
+    playbackNodeRef.current?.port?.close?.();
 
-    // Close audio context
+    streamRef.current?.getTracks().forEach((track) => track.stop());
     audioContextRef.current?.close();
 
-    // Clear refs
     audioContextRef.current = null;
+    captureSinkRef.current = null;
     streamRef.current = null;
     sourceRef.current = null;
     captureNodeRef.current = null;
@@ -183,7 +180,6 @@ export default function useAudioPipeline(wsHook) {
     inputAnalyserRef.current = null;
     outputAnalyserRef.current = null;
 
-    // Clear WS callback
     wsHook.setOnAudioReceived(null);
 
     setInputLevel(0);

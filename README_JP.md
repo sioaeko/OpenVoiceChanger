@@ -5,209 +5,211 @@
   <img src="https://img.shields.io/badge/FastAPI-0.115+-009688?logo=fastapi&logoColor=white" alt="FastAPI" />
   <img src="https://img.shields.io/badge/Vite-6-646CFF?logo=vite&logoColor=white" alt="Vite" />
   <img src="https://img.shields.io/badge/TailwindCSS-3-06B6D4?logo=tailwindcss&logoColor=white" alt="TailwindCSS" />
-  <img src="https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker&logoColor=white" alt="Docker" />
   <img src="https://img.shields.io/badge/License-MIT-green" alt="MIT License" />
 </p>
 
 <p align="center">
   リアルタイムAIボイスチェンジャー Webアプリケーション。<br/>
-  ONNXおよびRVCモデルを使用し、低遅延WebSocketオーディオパイプラインでリアルタイムに声を変換します。
+  ONNX または RVC モデルを低遅延の WebSocket オーディオパイプラインで接続します。
 </p>
 
 <p align="center">
   <a href="#クイックスタート">クイックスタート</a> •
-  <a href="#機能">機能</a> •
-  <a href="#アーキテクチャ">アーキテクチャ</a> •
-  <a href="#モデルサポート">モデル</a> •
+  <a href="#モデルサポート">モデルサポート</a> •
+  <a href="#api">API</a> •
   <a href="#設定">設定</a> •
-  <a href="README_KR.md">한국어</a> •
-  <a href="README.md">English</a>
+  <a href="README.md">English</a> •
+  <a href="README_KR.md">한국어</a>
 </p>
 
 ---
 
 ## 機能
 
-- **リアルタイム音声変換** — AudioWorkletによる低遅延バイナリWebSocketストリーミング
-- **複数モデル形式対応** — ONNX RuntimeおよびRVC v2（PyTorch）をサポート
-- **GPU自動検出** — CUDA利用可能時は自動的にGPUを使用し、利用できない場合はCPUにフォールバック
-- **WebベースUI** — ドラッグ&ドロップによるモデルアップロード対応のダークテーマインターフェース
-- **オーディオモニタリング** — リアルタイムの入出力音量メーターとレイテンシ表示
-- **デバイス選択** — ブラウザから入出力オーディオデバイスを選択可能
-- **設定の永続化** — localStorageによりセッション間で音声設定を保持
-- **Docker対応** — CPUおよびGPUプロファイルによるワンコマンドデプロイ
+- AudioWorklet とバイナリ WebSocket によるリアルタイム音声変換
+- ONNX と RVC モデル対応
+- ブラウザから入力 / 出力デバイスを選択
+- ストリーミング中にピッチと F0 を調整
+- サンプルレート、チャンクサイズ、ランタイム状態を確認できる `Settings` モーダル
+- ONNX provider、PyTorch device、GPU、CUDA 状態を表示
+- モデルのアップロード、アクティベート、削除を一画面で処理
 
 ## クイックスタート
 
-### Docker（推奨）
+以下のコマンドは Windows PowerShell を前提に、リポジトリのルートで実行します。
 
-```bash
-docker compose up --build
-# http://localhost:8000 を開く
-```
+### 1. バックエンドセットアップ
 
-### GPUサポート
-
-```bash
-docker compose --profile gpu up --build
-```
-
-### 開発環境
-
-```bash
-# 依存関係のインストール
-make install
-
-# バックエンド + フロントエンド開発サーバーの起動
-make dev
-
-# フロントエンド: http://localhost:5173
-# バックエンドAPIドキュメント: http://localhost:8000/docs
-```
-
-### 手動セットアップ
-
-```bash
-# バックエンド
-python -m venv .venv && source .venv/bin/activate
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
 pip install -r backend/requirements.txt
-PYTHONPATH=. uvicorn backend.main:app --reload
-
-# フロントエンド（別ターミナル）
-cd frontend && npm install && npm run dev
+pip install --no-deps git+https://github.com/RVC-Project/Retrieval-based-Voice-Conversion
 ```
 
-## アーキテクチャ
+### 2. 任意: ONNX GPU アクセラレーションを有効化
 
-```
-Browser (Vite + React 18)              Python (FastAPI)
-┌─────────────────────┐              ┌─────────────────────┐
-│ AudioWorklet Capture │──binary WS──▶│ WebSocket Router    │
-│ AudioWorklet Playback│◀─binary WS──│   ├ ONNX Processor  │
-│ React UI (Dark)      │──REST API──▶│   └ RVC Processor   │
-│ TailwindCSS          │◀─REST API──│ REST Router (Models) │
-└─────────────────────┘              │ Static File Serving  │
-                                     └─────────────────────┘
+デフォルトの `requirements.txt` は CPU 版 ONNX Runtime を導入します。ローカルで CUDA を使いたい場合は、CPU 版を削除して GPU 版に置き換えてください。
+
+```powershell
+pip uninstall -y onnxruntime
+pip install onnxruntime-gpu==1.23.2
 ```
 
-### 主要な設計判断
+### 3. フロントエンドセットアップ
 
-| 判断 | 理由 |
-|------|------|
-| **バイナリWebSocket** | 4096サンプル: バイナリ16KB vs JSON 160KB。毎秒12チャンクでは差は非常に大きい |
-| **AudioWorklet** | MediaRecorderは数百msのレイテンシを追加し、圧縮オーディオを出力する。Workletは専用オーディオスレッドでサンプルレベルの精度で動作する |
-| **シングルサーバー** | Node.jsプロキシ不要 — FastAPIがWebSocket、REST、静的ファイルを処理。1プロセス、余分なホップなし |
-| **アクティブモデルは1つ** | モデルは500MB〜2GBのGPUメモリを使用。一度に1つだけロードすることでOOMを防止 |
-| **モデルなしでサーバー起動可能** | サーバーを起動してから、Web UIで最初のモデルをアップロード |
-
-### プロジェクト構成
-
+```powershell
+cd frontend
+npm install
+npm run build
+cd ..
 ```
-OpenVoiceChanger/
-├── backend/
-│   ├── main.py                  # FastAPIアプリ、ライフスパン、静的マウント
-│   ├── config.py                # Pydantic Settings（環境変数）
-│   ├── routers/
-│   │   ├── models.py            # REST: モデルCRUD + アクティベーション
-│   │   └── websocket.py         # WS: リアルタイムオーディオストリーミング
-│   └── services/
-│       ├── model_manager.py     # モデルレジストリ、ロード/アンロード
-│       ├── audio_processor.py   # PCMバイナリフレームエンコーディング
-│       ├── onnx_processor.py    # ONNX Runtime推論
-│       └── rvc_processor.py     # PyTorch RVC推論
-├── frontend/
-│   ├── src/
-│   │   ├── App.jsx              # メインアプリオーケストレーション
-│   │   ├── components/          # UIコンポーネント
-│   │   ├── hooks/               # useWebSocket, useAudioPipeline, useAudioDevices
-│   │   └── lib/                 # APIクライアント、定数、AudioWorkletプロセッサ
-│   └── public/
-│       └── audioWorklet.js      # キャプチャ + 再生AudioWorkletプロセッサ
-├── models/                      # モデルストレージ（UIからアップロード）
-├── Dockerfile                   # マルチステージ（Nodeビルド → Pythonランタイム）
-├── docker-compose.yml           # CPUデフォルト + GPUプロファイル
-└── Makefile                     # dev、build、dockerコマンド
+
+### 4. モデル資産の準備
+
+RVC `.pth` / `.pt` モデルには HuBERT コンテンツエンコーダが必要です。
+
+```powershell
+New-Item -ItemType Directory -Force models\assets | Out-Null
 ```
+
+配置先:
+
+```text
+models/assets/hubert_base.pt
+```
+
+別の場所を使う場合は `OVC_HUBERT_PATH` を設定してください。
+
+### 5. アプリ起動
+
+```powershell
+.venv\Scripts\python.exe -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
+```
+
+ブラウザで開く URL:
+
+```text
+http://127.0.0.1:8000
+```
+
+### 6. 任意: Vite 開発モード
+
+ターミナル 1:
+
+```powershell
+.venv\Scripts\python.exe -m uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+ターミナル 2:
+
+```powershell
+cd frontend
+npm run dev
+```
+
+その後 `http://127.0.0.1:5173` を開いてください。
 
 ## モデルサポート
 
-| 形式 | エンジン | 用途 |
+| 形式 | エンジン | 備考 |
 |------|----------|------|
-| `.onnx` | ONNX Runtime | 汎用音声変換モデル |
-| `.pth` | PyTorch | RVC v2音声変換モデル |
+| `.onnx` | ONNX Runtime | デフォルトは CPU、`onnxruntime-gpu` 導入時は CUDA |
+| `.pth` / `.pt` | PyTorch | RVC v1/v2、`hubert_base.pt` が必要 |
 
-### 使い方
+## Web UI の流れ
 
-1. サーバーを起動する（`make dev` または `docker compose up`）
-2. Web UIを開く
-3. モデルファイル（`.onnx` または `.pth`）をアップロードエリアにドラッグ&ドロップする
-4. アップロードしたモデルの**Activate**をクリックする
-5. オーディオデバイスを選択し、**Start Voice Changer**をクリックする
-6. ピッチシフトとF0メソッドをリアルタイムで調整する
+1. ブラウザでアプリを開く
+2. `Model Bay` にモデルファイルをアップロードする
+3. 使いたいモデルで `Activate` を押す
+4. `Settings` を開き、サンプルレート、チャンクサイズ、ランタイム状態を確認する
+5. 入力デバイスと出力デバイスを選ぶ
+6. `Start Routing` を押す
+7. ストリーミング中にピッチと F0 を調整する
 
 ## API
-
-バックエンドはREST APIとWebSocketエンドポイントを公開しています：
 
 | メソッド | エンドポイント | 説明 |
 |----------|----------------|------|
 | `GET` | `/health` | ヘルスチェック |
-| `GET` | `/api/config` | サーバー設定（サンプルレート、チャンクサイズ） |
-| `GET` | `/api/models/` | 全モデルの一覧 |
-| `POST` | `/api/models/upload` | モデルファイルのアップロード |
-| `DELETE` | `/api/models/{name}` | モデルの削除 |
-| `POST` | `/api/models/{name}/activate` | モデルのアクティベーション |
-| `POST` | `/api/models/deactivate` | 現在のモデルのディアクティベーション |
-| `GET` | `/api/models/active` | アクティブなモデル情報の取得 |
+| `GET` | `/api/config` | サンプルレート、チャンクサイズ、ONNX ランタイム情報、PyTorch ランタイム情報 |
+| `GET` | `/api/models/` | アップロード済みモデル一覧 |
+| `POST` | `/api/models/upload` | モデルアップロード |
+| `DELETE` | `/api/models/{name}` | モデル削除 |
+| `POST` | `/api/models/{name}/activate` | モデルをアクティベート |
+| `POST` | `/api/models/deactivate` | 現在のモデルを無効化 |
+| `GET` | `/api/models/active` | アクティブモデル取得 |
 | `WS` | `/ws/audio` | リアルタイムオーディオストリーミング |
 
-サーバー実行中は `/docs`（Swagger UI）でインタラクティブなAPIドキュメントを利用できます。
+バックエンド起動中は `/docs` で Swagger UI を利用できます。
 
-### WebSocketプロトコル
+### WebSocket プロトコル
 
-1. `/ws/audio` に**接続**する
-2. **JSON設定を送信**: `{"sample_rate": 40000, "chunk_size": 4096}`
-3. **バイナリオーディオフレームを送信**: `[uint32 seq_num][uint32 reserved][float32[] PCMサンプル]`
-4. 同じ形式で**バイナリオーディオフレームを受信**する
-5. いつでも**JSON設定を送信**可能: `{"pitch_shift": 3.0, "f0_method": "harvest"}`
+1. `/ws/audio` に接続
+2. JSON 設定を送信: `{"sample_rate": 40000, "chunk_size": 4096}`
+3. バイナリオーディオフレームを送信: `[uint32 seq_num][uint32 reserved][float32[] PCM samples]`
+4. 同じ形式で処理済みオーディオフレームを受信
+5. 必要に応じて設定を送信: `{"pitch_shift": 3.0, "f0_method": "harvest"}`
 
 ## 設定
 
-すべての設定は `OVC_` プレフィックス付きの環境変数で行います：
+環境変数は `OVC_` プレフィックスを使います。
 
-| 変数 | デフォルト値 | 説明 |
-|------|-------------|------|
-| `OVC_MODELS_DIR` | `models` | モデルファイルのディレクトリ |
-| `OVC_HOST` | `0.0.0.0` | サーバーバインドアドレス |
-| `OVC_PORT` | `8000` | サーバーポート |
-| `OVC_SAMPLE_RATE` | `40000` | オーディオサンプルレート（Hz） |
-| `OVC_CHUNK_SIZE` | `4096` | オーディオチャンクサイズ（サンプル数） |
-| `OVC_CORS_ORIGINS` | `["*"]` | 許可するCORSオリジン |
+| 変数 | デフォルト | 説明 |
+|------|------------|------|
+| `OVC_MODELS_DIR` | `models` | モデルディレクトリ |
+| `OVC_HOST` | `0.0.0.0` | バックエンド bind アドレス |
+| `OVC_PORT` | `8000` | バックエンドポート |
+| `OVC_SAMPLE_RATE` | `40000` | 既定のサンプルレート |
+| `OVC_CHUNK_SIZE` | `4096` | 既定のチャンクサイズ |
+| `OVC_CORS_ORIGINS` | `["*"]` | 許可する CORS origin |
 | `OVC_LOG_LEVEL` | `info` | ログレベル |
+| `OVC_HUBERT_PATH` | `models/assets/hubert_base.pt` | RVC 用 HuBERT パス |
+| `OVC_RMVPE_ROOT` | `models/assets/rmvpe` | 任意の RMVPE 資産ディレクトリ |
+| `OVC_RVC_STREAM_CONTEXT_SECONDS` | `1.0` | ストリームごとの RVC コンテキスト長 |
+| `OVC_RVC_INDEX_RATE` | `0.75` | `.index` がある場合の retrieval mix |
+| `OVC_RVC_FILTER_RADIUS` | `3` | Harvest median filter 半径 |
+| `OVC_RVC_RMS_MIX_RATE` | `0.25` | RMS envelope blend |
+| `OVC_RVC_PROTECT` | `0.33` | 子音保護値 |
 
-## Makefileコマンド
+## プロジェクト構成
+
+```text
+OpenVoiceChanger/
+├── backend/
+│   ├── main.py
+│   ├── config.py
+│   ├── routers/
+│   └── services/
+├── frontend/
+│   ├── public/
+│   └── src/
+├── models/
+├── README.md
+├── README_KR.md
+├── README_JP.md
+└── Makefile
+```
+
+## Makefile
+
+`Makefile` は POSIX シェルまたは WSL 向けの補助コマンドです。
 
 | コマンド | 説明 |
 |----------|------|
-| `make install` | バックエンド + フロントエンドの依存関係をインストール |
+| `make install` | バックエンドとフロントエンドの依存関係をインストール |
 | `make dev` | バックエンドとフロントエンドの開発サーバーを起動 |
-| `make dev-backend` | バックエンドのみ起動（ホットリロード付き） |
+| `make dev-backend` | バックエンドのみ起動 |
 | `make dev-frontend` | フロントエンドのみ起動 |
-| `make build` | フロントエンドを本番用にビルド |
-| `make docker` | Dockerでビルドして起動（CPU） |
-| `make docker-gpu` | Dockerでビルドして起動（GPU） |
+| `make build` | フロントエンドをビルド |
 | `make clean` | ビルド成果物を削除 |
 
 ## 要件
 
-### 開発環境
 - Python 3.10+
 - Node.js 18+
 - npm
-
-### 本番環境（Docker）
-- Docker + Docker Compose
-- NVIDIA Container Toolkit（GPUサポート用）
 
 ## ライセンス
 

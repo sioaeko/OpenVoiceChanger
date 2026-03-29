@@ -18,11 +18,11 @@ function formatFileSize(bytes) {
 
 function getModelType(name) {
   if (name.endsWith('.onnx')) return 'ONNX';
-  if (name.endsWith('.pth')) return 'RVC';
+  if (name.endsWith('.pth') || name.endsWith('.pt')) return 'RVC';
   return 'Unknown';
 }
 
-export default function ModelManager() {
+export default function ModelManager({ activeModel = null, onActiveModelChange }) {
   const [models, setModels] = useState([]);
   const [activeModelName, setActiveModelName] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -36,32 +36,44 @@ export default function ModelManager() {
   const fileInputRef = useRef(null);
 
   const loadModels = useCallback(async () => {
+    setLoading(true);
     try {
       const [modelList, active] = await Promise.all([
         fetchModels(),
         getActiveModel(),
       ]);
+      const nextActiveModelName = active?.name || active?.model || null;
       setModels(Array.isArray(modelList) ? modelList : []);
-      setActiveModelName(active?.name || active?.model || null);
+      setActiveModelName(nextActiveModelName);
+      onActiveModelChange?.(nextActiveModelName);
       setError(null);
     } catch (err) {
       setError(err.message || 'Failed to load models');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [onActiveModelChange]);
 
   useEffect(() => {
     loadModels();
   }, [loadModels]);
 
+  useEffect(() => {
+    setActiveModelName(activeModel || null);
+  }, [activeModel]);
+
+  const syncActiveModel = useCallback((name) => {
+    setActiveModelName(name);
+    onActiveModelChange?.(name);
+  }, [onActiveModelChange]);
+
   const handleUpload = async (file) => {
     if (!file) return;
 
-    const validExtensions = ['.onnx', '.pth'];
+    const validExtensions = ['.onnx', '.pth', '.pt'];
     const ext = '.' + file.name.split('.').pop().toLowerCase();
     if (!validExtensions.includes(ext)) {
-      setError('Invalid file type. Please upload .onnx or .pth files.');
+      setError('Invalid file type. Please upload .onnx, .pth, or .pt files.');
       return;
     }
 
@@ -69,15 +81,16 @@ export default function ModelManager() {
     setUploadProgress(0);
     setError(null);
 
+    let progressInterval;
     try {
-      // Simulate progress since fetch doesn't support progress natively
-      const progressInterval = setInterval(() => {
+      progressInterval = setInterval(() => {
         setUploadProgress((prev) => Math.min(prev + 10, 90));
       }, 200);
 
       await uploadModel(file);
 
       clearInterval(progressInterval);
+      progressInterval = null;
       setUploadProgress(100);
 
       setTimeout(() => {
@@ -90,6 +103,10 @@ export default function ModelManager() {
       setError(err.message || 'Upload failed');
       setUploading(false);
       setUploadProgress(0);
+    } finally {
+      if (progressInterval) {
+        clearInterval(progressInterval);
+      }
     }
   };
 
@@ -121,7 +138,7 @@ export default function ModelManager() {
     setError(null);
     try {
       await activateModel(name);
-      setActiveModelName(name);
+      syncActiveModel(name);
     } catch (err) {
       setError(err.message || 'Failed to activate model');
     } finally {
@@ -134,7 +151,7 @@ export default function ModelManager() {
     setError(null);
     try {
       await deactivateModel();
-      setActiveModelName(null);
+      syncActiveModel(null);
     } catch (err) {
       setError(err.message || 'Failed to deactivate model');
     } finally {
@@ -155,7 +172,7 @@ export default function ModelManager() {
     try {
       if (activeModelName === name) {
         await deactivateModel();
-        setActiveModelName(null);
+        syncActiveModel(null);
       }
       await deleteModel(name);
       await loadModels();
@@ -167,19 +184,25 @@ export default function ModelManager() {
   };
 
   return (
-    <div className="bg-slate-900/50 backdrop-blur-sm rounded-xl border border-slate-800/50 p-5 space-y-5">
+    <section className="rounded-[28px] border border-white/10 bg-zinc-950/70 p-6 shadow-[0_20px_80px_rgba(0,0,0,0.35)] backdrop-blur-xl">
       <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">
-          Models
-        </h2>
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.34em] text-zinc-500">
+            Model Bay
+          </p>
+          <h2 className="mt-2 text-xl font-semibold tracking-[-0.04em] text-zinc-100">
+            Loaded checkpoints
+          </h2>
+        </div>
+
         <button
           onClick={loadModels}
           disabled={loading}
-          className="text-slate-500 hover:text-slate-300 p-1 rounded-lg hover:bg-slate-800 transition-colors"
+          className="rounded-full border border-white/10 bg-white/[0.03] p-2 text-zinc-500 transition hover:border-cyan-300/30 hover:bg-cyan-300/10 hover:text-cyan-200"
           title="Refresh models"
         >
           <svg
-            className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`}
+            className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`}
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
@@ -194,30 +217,32 @@ export default function ModelManager() {
         </button>
       </div>
 
-      {/* Upload area */}
+      <p className="mt-2 text-sm text-zinc-400">
+        Activate one model at a time. Matching `.index` files are picked up automatically.
+      </p>
+
       <div
         onDrop={handleDrop}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onClick={() => fileInputRef.current?.click()}
-        className={`relative border-2 border-dashed rounded-xl p-6 text-center cursor-pointer
-          transition-all duration-200
-          ${
-            dragActive
-              ? 'border-blue-400 bg-blue-500/10 drag-active'
-              : 'border-slate-700 hover:border-slate-600 hover:bg-slate-800/30'
-          }
-          ${uploading ? 'pointer-events-none opacity-60' : ''}`}
+        className={`relative mt-6 rounded-[24px] border border-dashed p-7 text-center transition-all duration-200 ${
+          dragActive
+            ? 'border-cyan-300/60 bg-cyan-300/10 drag-active'
+            : 'border-white/12 bg-white/[0.02] hover:border-amber-200/40 hover:bg-white/[0.04]'
+        } ${
+          uploading ? 'pointer-events-none opacity-60' : ''
+        }`}
       >
         <input
           ref={fileInputRef}
           type="file"
-          accept=".onnx,.pth"
+          accept=".onnx,.pth,.pt"
           onChange={handleFileSelect}
           className="hidden"
         />
         <svg
-          className="w-8 h-8 mx-auto mb-2 text-slate-500"
+          className="mx-auto mb-3 h-9 w-9 text-zinc-500"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
@@ -229,29 +254,27 @@ export default function ModelManager() {
           <polyline points="17 8 12 3 7 8" />
           <line x1="12" y1="3" x2="12" y2="15" />
         </svg>
-        <p className="text-sm text-slate-400">
-          {dragActive
-            ? 'Drop model file here'
-            : 'Drag & drop or click to upload'}
+        <p className="text-sm font-medium text-zinc-200">
+          {dragActive ? 'Drop model file here' : 'Drop a checkpoint or click to upload'}
         </p>
-        <p className="text-xs text-slate-600 mt-1">.onnx, .pth files</p>
+        <p className="mt-1 text-xs uppercase tracking-[0.22em] text-zinc-600">
+          .onnx / .pth / .pt
+        </p>
 
-        {/* Upload progress */}
         {uploading && (
-          <div className="absolute bottom-0 left-0 right-0 h-1 bg-slate-800 rounded-b-xl overflow-hidden">
+          <div className="absolute inset-x-0 bottom-0 h-1 overflow-hidden rounded-b-[24px] bg-white/5">
             <div
-              className="h-full bg-gradient-to-r from-blue-500 to-blue-400 transition-all duration-300"
+              className="h-full bg-gradient-to-r from-cyan-300 via-cyan-200 to-amber-200 transition-all duration-300"
               style={{ width: `${uploadProgress}%` }}
             />
           </div>
         )}
       </div>
 
-      {/* Error */}
       {error && (
-        <div className="rounded-lg bg-rose-900/30 border border-rose-800/50 p-3 flex items-start gap-2">
+        <div className="mt-4 flex items-start gap-2 rounded-2xl border border-rose-400/20 bg-rose-400/10 p-4">
           <svg
-            className="w-4 h-4 text-rose-400 mt-0.5 flex-shrink-0"
+            className="mt-0.5 h-4 w-4 flex-shrink-0 text-rose-300"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
@@ -261,16 +284,15 @@ export default function ModelManager() {
             <line x1="15" y1="9" x2="9" y2="15" />
             <line x1="9" y1="9" x2="15" y2="15" />
           </svg>
-          <p className="text-xs text-rose-400">{error}</p>
+          <p className="text-sm text-rose-100">{error}</p>
         </div>
       )}
 
-      {/* Model list */}
-      <div className="space-y-2">
+      <div className="mt-6 space-y-3">
         {loading && models.length === 0 ? (
-          <div className="flex items-center justify-center py-8">
+          <div className="flex items-center justify-center py-10">
             <svg
-              className="animate-spin h-5 w-5 text-slate-500"
+              className="h-5 w-5 animate-spin text-zinc-500"
               viewBox="0 0 24 24"
               fill="none"
             >
@@ -290,7 +312,7 @@ export default function ModelManager() {
             </svg>
           </div>
         ) : models.length === 0 ? (
-          <p className="text-sm text-slate-600 text-center py-6">
+          <p className="rounded-2xl border border-white/10 bg-black/20 px-4 py-8 text-center text-sm text-zinc-500">
             No models uploaded yet.
           </p>
         ) : (
@@ -304,56 +326,47 @@ export default function ModelManager() {
             return (
               <div
                 key={name}
-                className={`group rounded-lg border p-3 transition-all duration-200 ${
+                className={`rounded-[24px] border px-4 py-4 transition ${
                   isActive
-                    ? 'border-emerald-600/50 bg-emerald-900/10'
-                    : 'border-slate-800 bg-slate-800/20 hover:bg-slate-800/40'
+                    ? 'border-cyan-300/30 bg-cyan-300/10'
+                    : 'border-white/10 bg-black/20 hover:border-white/20 hover:bg-white/[0.03]'
                 }`}
               >
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2 min-w-0 flex-1">
-                    {/* Active indicator */}
-                    {isActive && (
-                      <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 flex-shrink-0 shadow-sm shadow-emerald-400/50" />
-                    )}
-
-                    {/* Model name */}
-                    <span
-                      className="text-sm font-medium text-slate-200 truncate"
-                      title={name}
-                    >
-                      {name}
-                    </span>
-
-                    {/* Type badge */}
-                    <span
-                      className={`flex-shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                        type === 'ONNX'
-                          ? 'bg-blue-900/50 text-blue-400 border border-blue-800/50'
-                          : type === 'RVC'
-                            ? 'bg-purple-900/50 text-purple-400 border border-purple-800/50'
-                            : 'bg-slate-800 text-slate-500 border border-slate-700'
-                      }`}
-                    >
-                      {type}
-                    </span>
-
-                    {/* Size */}
-                    {size != null && (
-                      <span className="text-[11px] text-slate-600 flex-shrink-0">
-                        {formatFileSize(size)}
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      {isActive && (
+                        <div className="h-2 w-2 flex-shrink-0 rounded-full bg-cyan-300 shadow-[0_0_20px_rgba(91,214,255,0.75)]" />
+                      )}
+                      <span
+                        className="truncate text-base font-medium text-zinc-100"
+                        title={name}
+                      >
+                        {name}
                       </span>
-                    )}
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-zinc-500">
+                      <span className={`rounded-full border px-2.5 py-1 ${
+                        type === 'ONNX'
+                          ? 'border-amber-200/30 bg-amber-200/10 text-amber-100'
+                          : type === 'RVC'
+                            ? 'border-cyan-300/30 bg-cyan-300/10 text-cyan-100'
+                            : 'border-white/10 bg-white/[0.03]'
+                      }`}>
+                        {type}
+                      </span>
+                      {size != null && <span>{formatFileSize(size)}</span>}
+                    </div>
                   </div>
 
-                  {/* Actions */}
-                  <div className="flex items-center gap-1.5 flex-shrink-0">
-                    {/* Activate / Deactivate */}
+                  <div className="flex flex-shrink-0 items-center gap-2">
                     {isActive ? (
                       <button
                         onClick={handleDeactivate}
                         disabled={isOperating}
-                        className="text-xs px-2.5 py-1 rounded-md bg-emerald-800/40 text-emerald-400 hover:bg-emerald-800/60 border border-emerald-700/50 disabled:opacity-50 transition-colors"
+                        title="Click to deactivate"
+                        className="rounded-full border border-cyan-300/30 bg-cyan-300/10 px-3 py-1.5 text-xs font-medium uppercase tracking-[0.18em] text-cyan-100 transition hover:bg-cyan-300/15 disabled:opacity-50"
                       >
                         {isOperating ? '...' : 'Active'}
                       </button>
@@ -361,23 +374,22 @@ export default function ModelManager() {
                       <button
                         onClick={() => handleActivate(name)}
                         disabled={isOperating}
-                        className="text-xs px-2.5 py-1 rounded-md bg-slate-800 text-slate-400 hover:text-blue-400 hover:bg-blue-900/30 border border-slate-700 hover:border-blue-700/50 disabled:opacity-50 transition-colors"
+                        className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs font-medium uppercase tracking-[0.18em] text-zinc-300 transition hover:border-cyan-300/30 hover:bg-cyan-300/10 hover:text-cyan-100 disabled:opacity-50"
                       >
                         {isOperating ? '...' : 'Activate'}
                       </button>
                     )}
 
-                    {/* Delete */}
                     <button
                       onClick={() => handleDelete(name)}
                       disabled={isOperating}
-                      className={`text-xs px-2 py-1 rounded-md border transition-colors disabled:opacity-50 ${
+                      className={`rounded-full border px-3 py-1.5 text-xs font-medium uppercase tracking-[0.18em] transition disabled:opacity-50 ${
                         deleteConfirm === name
-                          ? 'bg-rose-800/40 text-rose-400 border-rose-700/50'
-                          : 'bg-slate-800 text-slate-500 border-slate-700 hover:text-rose-400 hover:bg-rose-900/20 hover:border-rose-700/50'
+                          ? 'border-rose-300/30 bg-rose-300/10 text-rose-100'
+                          : 'border-white/10 bg-white/[0.03] text-zinc-500 hover:border-rose-300/30 hover:bg-rose-300/10 hover:text-rose-100'
                       }`}
                     >
-                      {deleteConfirm === name ? 'Confirm?' : 'Delete'}
+                      {deleteConfirm === name ? 'Confirm' : 'Delete'}
                     </button>
                   </div>
                 </div>
@@ -386,6 +398,6 @@ export default function ModelManager() {
           })
         )}
       </div>
-    </div>
+    </section>
   );
 }
