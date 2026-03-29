@@ -34,6 +34,16 @@
 - ONNX provider、PyTorch device、GPU、CUDA 状態を表示
 - モデルのアップロード、アクティベート、削除を一画面で処理
 
+## スクリーンショット
+
+### メイン画面
+
+![OpenVoiceChanger main UI](docs/images/main-ui.png)
+
+### 設定モーダル
+
+![OpenVoiceChanger settings modal](docs/images/settings-modal.png)
+
 ## クイックスタート
 
 以下のコマンドは Windows PowerShell を前提に、リポジトリのルートで実行します。

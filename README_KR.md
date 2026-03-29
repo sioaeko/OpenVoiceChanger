@@ -34,6 +34,16 @@
 - ONNX provider, PyTorch device, GPU, CUDA 상태 표시
 - 모델 업로드, 활성화, 삭제를 한 화면에서 처리
 
+## 스크린샷
+
+### 메인 화면
+
+![OpenVoiceChanger main UI](docs/images/main-ui.png)
+
+### 설정 모달
+
+![OpenVoiceChanger settings modal](docs/images/settings-modal.png)
+
 ## 빠른 시작
 
 아래 명령은 Windows PowerShell 기준이며, 저장소 루트에서 실행합니다.
