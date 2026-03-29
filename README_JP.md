@@ -48,6 +48,13 @@
 
 以下のコマンドは Windows PowerShell を前提に、リポジトリのルートで実行します。
 
+### 0. リポジトリを clone
+
+```powershell
+git clone https://github.com/sioaeko/OpenVoiceChanger.git
+cd OpenVoiceChanger
+```
+
 ### 1. バックエンドセットアップ
 
 ```powershell
