@@ -34,6 +34,16 @@
 - Runtime visibility for ONNX provider, PyTorch device, GPU, and CUDA status
 - One active model at a time, with drag-and-drop upload and activation
 
+## Screenshots
+
+### Main UI
+
+![OpenVoiceChanger main UI](docs/images/main-ui.png)
+
+### Settings modal
+
+![OpenVoiceChanger settings modal](docs/images/settings-modal.png)
+
 ## Quick Start
 
 The commands below assume Windows PowerShell in the repository root.
