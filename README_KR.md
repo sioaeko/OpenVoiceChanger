@@ -48,6 +48,13 @@
 
 아래 명령은 Windows PowerShell 기준이며, 저장소 루트에서 실행합니다.
 
+### 0. 저장소 클론
+
+```powershell
+git clone https://github.com/sioaeko/OpenVoiceChanger.git
+cd OpenVoiceChanger
+```
+
 ### 1. 백엔드 설치
 
 ```powershell

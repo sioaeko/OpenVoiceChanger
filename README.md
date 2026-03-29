@@ -48,6 +48,13 @@
 
 The commands below assume Windows PowerShell in the repository root.
 
+### 0. Clone the repository
+
+```powershell
+git clone https://github.com/sioaeko/OpenVoiceChanger.git
+cd OpenVoiceChanger
+```
+
 ### 1. Backend setup
 
 ```powershell
