@@ -1,8 +1,8 @@
-fastapi==0.110.1
-uvicorn==0.29.0
-numpy==1.26.3
-torch==2.1.2
-onnx==1.14.0
-onnxruntime==1.17.1
-websockets==11.0.3
-python-multipart==0.0.9
+fastapi>=0.115.0
+uvicorn>=0.32.0
+numpy>=1.26.0
+torch>=2.4.0
+onnx>=1.16.0
+onnxruntime>=1.20.0
+websockets>=13.0
+python-multipart>=0.0.12

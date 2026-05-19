@@ -8,12 +8,14 @@
     "dev": "nodemon index.js"
   },
   "dependencies": {
-    "express": "^4.17.1",
-    "ws": "^7.4.6",
-    "onnxruntime-node": "^1.8.0",
-    "@tensorflow/tfjs-node": "^3.6.0"
+    "express": "^4.21.0",
+    "ws": "^8.18.0",
+    "onnxruntime-node": "^1.20.0"
   },
   "devDependencies": {
-    "nodemon": "^2.0.7"
+    "nodemon": "^3.1.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }

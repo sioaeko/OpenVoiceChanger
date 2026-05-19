@@ -1,43 +1,31 @@
 {
-  "name": "realtime-voice-changer",
+  "name": "open-voice-changer",
   "version": "1.0.0",
-  "description": "A real-time voice changer application using WebSockets and ONNX/TensorFlow/PyTorch",
-  "main": "index.js",
+  "description": "A real-time voice changer application using WebSockets and ONNX/PyTorch",
+  "private": true,
   "scripts": {
-    "start": "node index.js",
-    "dev": "nodemon index.js"
-  },
-  "dependencies": {
-    "express": "^5.0.0",
-    "onnxruntime-node": "^1.20.1",
-    "@tensorflow/tfjs-node": "^4.22.0",
-    "ws": "^8.16.0",
-    "python-shell": "^5.0.0",
-    "multer": "^1.4.5-lts.1"
-  },
-  "devDependencies": {
-    "nodemon": "^3.1.9"
+    "start": "cd server && node index.js",
+    "dev": "cd server && npx nodemon index.js",
+    "client": "cd client && npm start",
+    "server": "cd server && node index.js",
+    "python": "cd python_server && python python_server.py",
+    "build:client": "cd client && npm run build",
+    "install:all": "npm run install:server && npm run install:client",
+    "install:server": "cd server && npm install",
+    "install:client": "cd client && npm install"
   },
   "keywords": [
     "voice",
     "changer",
     "real-time",
     "onnx",
-    "tensorflow",
     "pytorch",
+    "rvc",
     "websocket"
   ],
   "author": "sioaeko",
   "license": "MIT",
-  "files": [
-    "index.js",
-    "rvc-model.js",
-    "onnx-model.js",
-    "python_server.py",
-    "public"
-  ],
   "engines": {
     "node": ">=18.0.0"
   }
 }
-

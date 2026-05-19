@@ -1,3 +1,38 @@
-node_modules
+node_modules/
 .env
+.env.local
 .DS_Store
+Thumbs.db
+
+# Build outputs
+client/build/
+dist/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+*.egg-info/
+
+# Models (large binary files)
+server/models/*.onnx
+server/models/*.pt
+server/models/*.pth
+python_server/models/*.onnx
+python_server/models/*.pt
+python_server/models/*.pth
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+*.DS_Store
