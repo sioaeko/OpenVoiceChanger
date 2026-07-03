@@ -26,23 +26,57 @@
 
 ## Features
 
+### Realtime studio
 - Real-time voice conversion with binary WebSocket streaming and AudioWorklet
-- ONNX and RVC model support
-- Device routing from the browser
-- Live pitch and F0 controls while streaming
-- Session settings modal for sample rate, chunk size, and runtime visibility
-- Runtime visibility for ONNX provider, PyTorch device, GPU, and CUDA status
-- One active model at a time, with drag-and-drop upload and activation
+- ONNX and RVC model support, plus a **model-free DSP mode** (pitch shifting and effects with no checkpoint loaded)
+- Live pitch **and formant** shifting, F0 method selection (PM / Harvest / Crepe / RMVPE / FCPE), and RVC advanced controls (index rate, RMS mix, protect)
+- **12-effect server-side DSP rack**: noise gate, robot, whisper, telephone, distortion, bitcrush, chorus, echo, reverb, tone EQ, compressor, output gain — all streaming-safe with per-connection state
+- **16 built-in voice presets** (Chipmunk, Deep Voice, Robot, Ghost, Telephone, Stadium, …) plus save/delete for your own presets
+- Real-time spectrum visualizer, VU meters with peak hold, latency sparkline, and a server timing breakdown (model / DSP / network)
+- **Output recorder** — capture the converted voice and download it as WAV
+
+### Offline converter
+- Upload a whole audio file (wav / mp3 / flac / ogg / m4a) and render it through the active model + effect chain to a downloadable WAV
+
+### Management
+- Drag-and-drop model upload (`.pth` / `.pt` / `.onnx` + companion `.index` files), one active model at a time
+- Model metadata badges: RVC version, target sample rate, F0 support, index presence, device
+- Session settings modal for sample rate, chunk size, and ONNX / PyTorch / GPU / CUDA runtime visibility
 
 ## Screenshots
 
-### Main UI
+### Studio
 
-![OpenVoiceChanger main UI](docs/images/main-ui.png)
+![Studio — realtime workspace](docs/images/main-ui.png)
 
-### Settings modal
+The realtime workspace: live spectrum, device routing, output recorder, VU meters with a
+model / DSP / network latency breakdown, and pitch, formant, and F0 method controls.
 
-![OpenVoiceChanger settings modal](docs/images/settings-modal.png)
+### Presets & effects rack
+
+![Voice presets and DSP effects rack](docs/images/effects-rack.png)
+
+16 one-click voice presets and the 12-effect server-side DSP chain. Everything here works
+with or without a voice model — enable an effect and it applies to the live stream instantly.
+
+### Models
+
+![Model bay](docs/images/models.png)
+
+Drag-and-drop upload for RVC / ONNX checkpoints and companion `.index` files, with metadata
+badges and one-click activation.
+
+### Converter
+
+![Offline file converter](docs/images/converter.png)
+
+Render whole audio files through the active model and effect chain, then download the result as WAV.
+
+### Settings
+
+![Session runtime settings](docs/images/settings-modal.png)
+
+Stream defaults plus a live view of what the backend sees: ONNX provider, PyTorch device, GPU, and CUDA.
 
 ## Quick Start
 
@@ -138,12 +172,11 @@ Then open `http://127.0.0.1:5173`.
 ## Web UI Flow
 
 1. Open the app in your browser.
-2. Upload a model file in `Model Bay`.
-3. Click `Activate` on the model you want to use.
-4. Open `Settings` to review sample rate, chunk size, and runtime status.
-5. Pick your input and output devices.
-6. Click `Start Routing`.
-7. Adjust pitch and F0 while the stream is running.
+2. (Optional) Upload and activate a model in the `Models` tab — without one, the studio runs in pure DSP mode.
+3. Pick your input and output devices in the `Studio` tab.
+4. Click `Start Voice Changer`.
+5. Shape the voice live: pitch, formant, F0 method, effect rack, or a one-click preset.
+6. Record the output, or render whole files in the `Converter` tab.
 
 ## API
 
@@ -157,6 +190,10 @@ Then open `http://127.0.0.1:5173`.
 | `POST` | `/api/models/{name}/activate` | Activate a model |
 | `POST` | `/api/models/deactivate` | Deactivate the current model |
 | `GET` | `/api/models/active` | Get the active model |
+| `GET` | `/api/presets/` | List built-in and user voice presets |
+| `POST` | `/api/presets/` | Save a user preset |
+| `DELETE` | `/api/presets/{id}` | Delete a user preset |
+| `POST` | `/api/convert/` | Offline file conversion (multipart upload → WAV) |
 | `WS` | `/ws/audio` | Real-time audio streaming |
 
 Interactive docs are available at `/docs` while the backend is running.
@@ -166,8 +203,10 @@ Interactive docs are available at `/docs` while the backend is running.
 1. Connect to `/ws/audio`
 2. Send JSON config: `{"sample_rate": 40000, "chunk_size": 4096}`
 3. Send binary audio frames: `[uint32 seq_num][uint32 reserved][float32[] PCM samples]`
-4. Receive processed audio frames in the same format
-5. Send settings updates such as `{"pitch_shift": 3.0, "f0_method": "harvest"}`
+4. Receive processed audio frames in the same format — the response `reserved` field carries the server processing time in hundredths of a millisecond
+5. Send settings updates such as
+   `{"pitch_shift": 3.0, "formant_shift": -2.0, "f0_method": "rmvpe", "effects": {"reverb": {"enabled": true, "size": 0.6, "mix": 0.4}}}`
+6. Receive periodic status JSON: `{"type": "status", "latency_ms": …, "model_ms": …, "dsp_ms": …, "mode": "rvc|onnx|dsp", "effects_active": …}`
 
 ## Configuration
 
@@ -189,6 +228,8 @@ Environment variables use the `OVC_` prefix.
 | `OVC_RVC_FILTER_RADIUS` | `3` | Harvest median filter radius |
 | `OVC_RVC_RMS_MIX_RATE` | `0.25` | RMS envelope blend |
 | `OVC_RVC_PROTECT` | `0.33` | Consonant protection |
+| `OVC_PRESETS_PATH` | `data/presets.json` | User preset storage file |
+| `OVC_MAX_CONVERT_SECONDS` | `600` | Max audio length for offline conversion |
 
 ## Project Structure
 

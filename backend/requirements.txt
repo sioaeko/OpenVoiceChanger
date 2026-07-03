@@ -16,3 +16,4 @@ pyworld>=0.3.5,<0.4.0
 soundfile>=0.12.1,<0.13.0
 torchaudio>=2.11.0
 torchcrepe>=0.0.22,<0.0.23
+torchfcpe>=0.0.4

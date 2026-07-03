@@ -26,23 +26,57 @@
 
 ## 機能
 
+### リアルタイムスタジオ
 - AudioWorklet とバイナリ WebSocket によるリアルタイム音声変換
-- ONNX と RVC モデル対応
-- ブラウザから入力 / 出力デバイスを選択
-- ストリーミング中にピッチと F0 を調整
-- サンプルレート、チャンクサイズ、ランタイム状態を確認できる `Settings` モーダル
-- ONNX provider、PyTorch device、GPU、CUDA 状態を表示
-- モデルのアップロード、アクティベート、削除を一画面で処理
+- ONNX と RVC モデル対応 + **モデル不要の DSP モード**（チェックポイントなしでピッチシフトとエフェクトを使用可能）
+- リアルタイムのピッチ **とフォルマント** シフト、F0 方式選択（PM / Harvest / Crepe / RMVPE / FCPE）、RVC 詳細パラメータ（index rate、RMS mix、protect）
+- **サーバーサイド 12 種エフェクトラック**: ノイズゲート、ロボット、ウィスパー、電話、ディストーション、ビットクラッシュ、コーラス、エコー、リバーブ、トーン EQ、コンプレッサー、出力ゲイン
+- **内蔵ボイスプリセット 16 種**（チップマンク、ディープボイス、ロボット、ゴーストなど）+ ユーザープリセットの保存 / 削除
+- リアルタイムスペクトラムビジュアライザー、ピークホールド付き VU メーター、レイテンシスパークライン、サーバー処理時間の内訳（モデル / DSP / ネットワーク）
+- **出力レコーダー** — 変換後の声を WAV でダウンロード
+
+### オフライン変換
+- オーディオファイル（wav / mp3 / flac / ogg / m4a）をアップロードし、アクティブモデル + エフェクトチェーンでレンダリングして WAV をダウンロード
+
+### 管理
+- ドラッグ & ドロップのモデルアップロード（`.pth` / `.pt` / `.onnx` + 付随する `.index`）、同時にアクティブなモデルは 1 つ
+- モデルメタデータバッジ: RVC バージョン、ターゲットサンプルレート、F0 対応、index 有無、デバイス
+- サンプルレート、チャンクサイズ、ONNX / PyTorch / GPU / CUDA 状態を確認できる設定モーダル
 
 ## スクリーンショット
 
-### メイン画面
+### スタジオ
 
-![OpenVoiceChanger main UI](docs/images/main-ui.png)
+![スタジオ — リアルタイムワークスペース](docs/images/main-ui.png)
 
-### 設定モーダル
+リアルタイムワークスペース: ライブスペクトラム、デバイスルーティング、出力レコーダー、
+モデル / DSP / ネットワークのレイテンシ内訳付き VU メーター、ピッチ・フォルマント・F0 方式のコントロール。
 
-![OpenVoiceChanger settings modal](docs/images/settings-modal.png)
+### プリセット & エフェクトラック
+
+![ボイスプリセットと DSP エフェクトラック](docs/images/effects-rack.png)
+
+ワンクリックのボイスプリセット 16 種とサーバーサイド 12 種の DSP チェーン。
+モデルなしでもすべて動作し、エフェクトはライブストリームに即時反映されます。
+
+### モデル
+
+![モデルベイ](docs/images/models.png)
+
+RVC / ONNX チェックポイントと付随する `.index` ファイルのドラッグ & ドロップアップロード、
+メタデータバッジ、ワンクリックのアクティベート。
+
+### コンバーター
+
+![オフラインファイル変換](docs/images/converter.png)
+
+オーディオファイル全体をアクティブモデル + エフェクトチェーンでレンダリングし、WAV としてダウンロードします。
+
+### 設定
+
+![セッションランタイム設定](docs/images/settings-modal.png)
+
+ストリームのデフォルト設定に加えて、バックエンドが認識している ONNX provider、PyTorch device、GPU、CUDA の状態を表示します。
 
 ## クイックスタート
 
@@ -138,12 +172,11 @@ npm run dev
 ## Web UI の流れ
 
 1. ブラウザでアプリを開く
-2. `Model Bay` にモデルファイルをアップロードする
-3. 使いたいモデルで `Activate` を押す
-4. `Settings` を開き、サンプルレート、チャンクサイズ、ランタイム状態を確認する
-5. 入力デバイスと出力デバイスを選ぶ
-6. `Start Routing` を押す
-7. ストリーミング中にピッチと F0 を調整する
+2. （任意）`Models` タブでモデルをアップロードしてアクティベートする — モデルがなければ純粋な DSP モードで動作します
+3. `Studio` タブで入力 / 出力デバイスを選ぶ
+4. `Start Voice Changer` を押す
+5. ピッチ、フォルマント、F0 方式、エフェクトラック、ワンクリックプリセットで声をリアルタイムに変える
+6. 出力を録音するか、`Converter` タブでファイル全体を変換する
 
 ## API
 
@@ -157,6 +190,10 @@ npm run dev
 | `POST` | `/api/models/{name}/activate` | モデルをアクティベート |
 | `POST` | `/api/models/deactivate` | 現在のモデルを無効化 |
 | `GET` | `/api/models/active` | アクティブモデル取得 |
+| `GET` | `/api/presets/` | 内蔵 + ユーザープリセット一覧 |
+| `POST` | `/api/presets/` | ユーザープリセット保存 |
+| `DELETE` | `/api/presets/{id}` | ユーザープリセット削除 |
+| `POST` | `/api/convert/` | オフラインファイル変換（multipart アップロード → WAV） |
 | `WS` | `/ws/audio` | リアルタイムオーディオストリーミング |
 
 バックエンド起動中は `/docs` で Swagger UI を利用できます。
@@ -166,8 +203,10 @@ npm run dev
 1. `/ws/audio` に接続
 2. JSON 設定を送信: `{"sample_rate": 40000, "chunk_size": 4096}`
 3. バイナリオーディオフレームを送信: `[uint32 seq_num][uint32 reserved][float32[] PCM samples]`
-4. 同じ形式で処理済みオーディオフレームを受信
-5. 必要に応じて設定を送信: `{"pitch_shift": 3.0, "f0_method": "harvest"}`
+4. 同じ形式で処理済みオーディオフレームを受信 — レスポンスの `reserved` フィールドにサーバー処理時間（1/100 ms 単位）が入ります
+5. 必要に応じて設定を送信:
+   `{"pitch_shift": 3.0, "formant_shift": -2.0, "f0_method": "rmvpe", "effects": {"reverb": {"enabled": true, "size": 0.6, "mix": 0.4}}}`
+6. 定期的なステータス JSON を受信: `{"type": "status", "latency_ms": …, "model_ms": …, "dsp_ms": …, "mode": "rvc|onnx|dsp", "effects_active": …}`
 
 ## 設定
 
@@ -188,6 +227,8 @@ npm run dev
 | `OVC_RVC_INDEX_RATE` | `0.75` | `.index` がある場合の retrieval mix |
 | `OVC_RVC_FILTER_RADIUS` | `3` | Harvest median filter 半径 |
 | `OVC_RVC_RMS_MIX_RATE` | `0.25` | RMS envelope blend |
+| `OVC_PRESETS_PATH` | `data/presets.json` | ユーザープリセット保存ファイル |
+| `OVC_MAX_CONVERT_SECONDS` | `600` | オフライン変換の最大オーディオ長 |
 | `OVC_RVC_PROTECT` | `0.33` | 子音保護値 |
 
 ## プロジェクト構成

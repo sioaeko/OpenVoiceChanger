@@ -38,17 +38,19 @@ def bytes_to_audio(data: bytes) -> tuple[np.ndarray, int, int]:
     return samples, seq_num, reserved
 
 
-def audio_to_bytes(audio: np.ndarray, seq_num: int) -> bytes:
+def audio_to_bytes(audio: np.ndarray, seq_num: int, reserved: int = 0) -> bytes:
     """Pack audio samples into the binary frame format.
 
     Args:
         audio: Float32 PCM samples.
         seq_num: Sequence number for this frame.
+        reserved: Value for the second header field. Server responses use it
+            to report processing time in hundredths of a millisecond.
 
     Returns:
         Bytes with header + float32 payload.
     """
-    header = struct.pack(HEADER_FORMAT, seq_num, 0)
+    header = struct.pack(HEADER_FORMAT, seq_num, reserved & 0xFFFFFFFF)
     payload = audio.astype(np.float32).tobytes()
     return header + payload
 

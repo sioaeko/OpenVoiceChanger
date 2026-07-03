@@ -22,6 +22,18 @@ function getModelType(name) {
   return 'Unknown';
 }
 
+function MetaBadge({ children, tone = 'default' }) {
+  const tones = {
+    default: 'border-white/10 bg-white/[0.03] text-zinc-500',
+    emerald: 'border-emerald-300/30 bg-emerald-400/[0.07] text-emerald-200',
+  };
+  return (
+    <span className={`rounded-sm border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.1em] ${tones[tone] || tones.default}`}>
+      {children}
+    </span>
+  );
+}
+
 export default function ModelManager({ activeModel = null, onActiveModelChange }) {
   const [models, setModels] = useState([]);
   const [activeModelName, setActiveModelName] = useState(null);
@@ -70,10 +82,10 @@ export default function ModelManager({ activeModel = null, onActiveModelChange }
   const handleUpload = async (file) => {
     if (!file) return;
 
-    const validExtensions = ['.onnx', '.pth', '.pt'];
+    const validExtensions = ['.onnx', '.pth', '.pt', '.index'];
     const ext = '.' + file.name.split('.').pop().toLowerCase();
     if (!validExtensions.includes(ext)) {
-      setError('Invalid file type. Please upload .onnx, .pth, or .pt files.');
+      setError('Invalid file type. Please upload .onnx, .pth, .pt, or .index files.');
       return;
     }
 
@@ -111,26 +123,16 @@ export default function ModelManager({ activeModel = null, onActiveModelChange }
   };
 
   const handleFileSelect = (e) => {
-    const file = e.target.files?.[0];
-    if (file) handleUpload(file);
+    const files = Array.from(e.target.files || []);
+    files.forEach((file) => handleUpload(file));
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const handleDrop = (e) => {
     e.preventDefault();
     setDragActive(false);
-    const file = e.dataTransfer.files?.[0];
-    if (file) handleUpload(file);
-  };
-
-  const handleDragOver = (e) => {
-    e.preventDefault();
-    setDragActive(true);
-  };
-
-  const handleDragLeave = (e) => {
-    e.preventDefault();
-    setDragActive(false);
+    const files = Array.from(e.dataTransfer.files || []);
+    files.forEach((file) => handleUpload(file));
   };
 
   const handleActivate = async (name) => {
@@ -139,6 +141,7 @@ export default function ModelManager({ activeModel = null, onActiveModelChange }
     try {
       await activateModel(name);
       syncActiveModel(name);
+      await loadModels();
     } catch (err) {
       setError(err.message || 'Failed to activate model');
     } finally {
@@ -184,21 +187,17 @@ export default function ModelManager({ activeModel = null, onActiveModelChange }
   };
 
   return (
-    <section className="rounded-[28px] border border-white/10 bg-zinc-950/70 p-6 shadow-[0_20px_80px_rgba(0,0,0,0.35)] backdrop-blur-xl">
+    <section className="panel p-6">
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-[10px] font-semibold uppercase tracking-[0.34em] text-zinc-500">
-            Model Bay
-          </p>
-          <h2 className="mt-2 text-xl font-semibold tracking-[-0.04em] text-zinc-100">
-            Loaded checkpoints
-          </h2>
+          <p className="panel-kicker">Model Bay</p>
+          <h2 className="panel-title">Voice models</h2>
         </div>
 
         <button
           onClick={loadModels}
           disabled={loading}
-          className="rounded-full border border-white/10 bg-white/[0.03] p-2 text-zinc-500 transition hover:border-cyan-300/30 hover:bg-cyan-300/10 hover:text-cyan-200"
+          className="rounded border border-white/10 bg-white/[0.03] p-2 text-zinc-500 transition hover:border-white/25 hover:bg-white/[0.06] hover:text-zinc-200"
           title="Refresh models"
         >
           <svg
@@ -217,27 +216,33 @@ export default function ModelManager({ activeModel = null, onActiveModelChange }
         </button>
       </div>
 
-      <p className="mt-2 text-sm text-zinc-400">
-        Activate one model at a time. Matching `.index` files are picked up automatically.
+      <p className="mt-2 text-sm text-zinc-500">
+        One model runs at a time. Matching <code className="text-zinc-400">.index</code> files
+        are picked up automatically. Without a model the studio runs in pure DSP mode.
       </p>
 
       <div
         onDrop={handleDrop}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDragActive(true);
+        }}
+        onDragLeave={(e) => {
+          e.preventDefault();
+          setDragActive(false);
+        }}
         onClick={() => fileInputRef.current?.click()}
-        className={`relative mt-6 rounded-[24px] border border-dashed p-7 text-center transition-all duration-200 ${
+        className={`relative mt-5 cursor-pointer rounded-md border border-dashed p-7 text-center transition-all duration-200 ${
           dragActive
-            ? 'border-cyan-300/60 bg-cyan-300/10 drag-active'
-            : 'border-white/12 bg-white/[0.02] hover:border-amber-200/40 hover:bg-white/[0.04]'
-        } ${
-          uploading ? 'pointer-events-none opacity-60' : ''
-        }`}
+            ? 'border-white/40 bg-white/[0.05] drag-active'
+            : 'border-white/[0.12] bg-white/[0.02] hover:border-white/25 hover:bg-white/[0.04]'
+        } ${uploading ? 'pointer-events-none opacity-60' : ''}`}
       >
         <input
           ref={fileInputRef}
           type="file"
-          accept=".onnx,.pth,.pt"
+          accept=".onnx,.pth,.pt,.index"
+          multiple
           onChange={handleFileSelect}
           className="hidden"
         />
@@ -255,16 +260,16 @@ export default function ModelManager({ activeModel = null, onActiveModelChange }
           <line x1="12" y1="3" x2="12" y2="15" />
         </svg>
         <p className="text-sm font-medium text-zinc-200">
-          {dragActive ? 'Drop model file here' : 'Drop a checkpoint or click to upload'}
+          {dragActive ? 'Drop model files here' : 'Drop checkpoints or click to upload'}
         </p>
         <p className="mt-1 text-xs uppercase tracking-[0.22em] text-zinc-600">
-          .onnx / .pth / .pt
+          .pth / .pt / .onnx + optional .index
         </p>
 
         {uploading && (
-          <div className="absolute inset-x-0 bottom-0 h-1 overflow-hidden rounded-b-[24px] bg-white/5">
+          <div className="absolute inset-x-0 bottom-0 h-1 overflow-hidden rounded-b-[22px] bg-white/5">
             <div
-              className="h-full bg-gradient-to-r from-cyan-300 via-cyan-200 to-amber-200 transition-all duration-300"
+              className="h-full bg-zinc-200 transition-all duration-300"
               style={{ width: `${uploadProgress}%` }}
             />
           </div>
@@ -272,7 +277,7 @@ export default function ModelManager({ activeModel = null, onActiveModelChange }
       </div>
 
       {error && (
-        <div className="mt-4 flex items-start gap-2 rounded-2xl border border-rose-400/20 bg-rose-400/10 p-4">
+        <div className="mt-4 flex items-start gap-2 rounded-md border border-rose-400/20 bg-rose-400/10 p-4">
           <svg
             className="mt-0.5 h-4 w-4 flex-shrink-0 text-rose-300"
             viewBox="0 0 24 24"
@@ -288,37 +293,24 @@ export default function ModelManager({ activeModel = null, onActiveModelChange }
         </div>
       )}
 
-      <div className="mt-6 space-y-3">
+      <div className="mt-5 space-y-3">
         {loading && models.length === 0 ? (
           <div className="flex items-center justify-center py-10">
-            <svg
-              className="h-5 w-5 animate-spin text-zinc-500"
-              viewBox="0 0 24 24"
-              fill="none"
-            >
-              <circle
-                className="opacity-25"
-                cx="12"
-                cy="12"
-                r="10"
-                stroke="currentColor"
-                strokeWidth="4"
-              />
-              <path
-                className="opacity-75"
-                fill="currentColor"
-                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-              />
+            <svg className="h-5 w-5 animate-spin text-zinc-500" viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
             </svg>
           </div>
         ) : models.length === 0 ? (
-          <p className="rounded-2xl border border-white/10 bg-black/20 px-4 py-8 text-center text-sm text-zinc-500">
-            No models uploaded yet.
+          <p className="rounded-md border border-white/[0.07] bg-black/20 px-4 py-8 text-center text-sm text-zinc-500">
+            No models yet — upload an RVC checkpoint, or just use the DSP studio.
           </p>
         ) : (
           models.map((model) => {
             const name = typeof model === 'string' ? model : model.name;
             const size = typeof model === 'object' ? (model.size_bytes ?? model.size ?? null) : null;
+            const hasIndex = typeof model === 'object' && Boolean(model.has_index);
+            const details = typeof model === 'object' ? model.details : null;
             const isActive = activeModelName === name;
             const isOperating = operatingOn === name;
             const type = getModelType(name);
@@ -326,37 +318,33 @@ export default function ModelManager({ activeModel = null, onActiveModelChange }
             return (
               <div
                 key={name}
-                className={`rounded-[24px] border px-4 py-4 transition ${
+                className={`rounded-md border px-4 py-4 transition ${
                   isActive
-                    ? 'border-cyan-300/30 bg-cyan-300/10'
-                    : 'border-white/10 bg-black/20 hover:border-white/20 hover:bg-white/[0.03]'
+                    ? 'border-emerald-300/30 bg-emerald-400/[0.04]'
+                    : 'border-white/[0.07] bg-black/20 hover:border-white/[0.15]'
                 }`}
               >
                 <div className="flex items-start justify-between gap-4">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       {isActive && (
-                        <div className="h-2 w-2 flex-shrink-0 rounded-full bg-cyan-300 shadow-[0_0_20px_rgba(91,214,255,0.75)]" />
+                        <div className="h-2 w-2 flex-shrink-0 rounded-full bg-emerald-400" />
                       )}
-                      <span
-                        className="truncate text-base font-medium text-zinc-100"
-                        title={name}
-                      >
+                      <span className="truncate text-base font-medium text-zinc-100" title={name}>
                         {name}
                       </span>
                     </div>
 
-                    <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-zinc-500">
-                      <span className={`rounded-full border px-2.5 py-1 ${
-                        type === 'ONNX'
-                          ? 'border-amber-200/30 bg-amber-200/10 text-amber-100'
-                          : type === 'RVC'
-                            ? 'border-cyan-300/30 bg-cyan-300/10 text-cyan-100'
-                            : 'border-white/10 bg-white/[0.03]'
-                      }`}>
-                        {type}
-                      </span>
-                      {size != null && <span>{formatFileSize(size)}</span>}
+                    <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+                      <MetaBadge>{type}</MetaBadge>
+                      {size != null && <MetaBadge>{formatFileSize(size)}</MetaBadge>}
+                      {hasIndex && <MetaBadge tone="emerald">Index</MetaBadge>}
+                      {details?.version && <MetaBadge>{details.version}</MetaBadge>}
+                      {details?.target_sample_rate && (
+                        <MetaBadge>{(details.target_sample_rate / 1000).toFixed(0)} kHz</MetaBadge>
+                      )}
+                      {details?.f0 === true && <MetaBadge>F0</MetaBadge>}
+                      {details?.device && <MetaBadge>{details.device}</MetaBadge>}
                     </div>
                   </div>
 
@@ -366,26 +354,26 @@ export default function ModelManager({ activeModel = null, onActiveModelChange }
                         onClick={handleDeactivate}
                         disabled={isOperating}
                         title="Click to deactivate"
-                        className="rounded-full border border-cyan-300/30 bg-cyan-300/10 px-3 py-1.5 text-xs font-medium uppercase tracking-[0.18em] text-cyan-100 transition hover:bg-cyan-300/15 disabled:opacity-50"
+                        className="rounded border border-emerald-300/40 bg-emerald-400/10 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-emerald-200 transition hover:bg-emerald-400/20 disabled:opacity-50"
                       >
-                        {isOperating ? '...' : 'Active'}
+                        {isOperating ? '…' : 'Active'}
                       </button>
                     ) : (
                       <button
                         onClick={() => handleActivate(name)}
                         disabled={isOperating}
-                        className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs font-medium uppercase tracking-[0.18em] text-zinc-300 transition hover:border-cyan-300/30 hover:bg-cyan-300/10 hover:text-cyan-100 disabled:opacity-50"
+                        className="rounded border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs font-medium uppercase tracking-[0.12em] text-zinc-300 transition hover:border-white/25 hover:bg-white/[0.06] hover:text-zinc-100 disabled:opacity-50"
                       >
-                        {isOperating ? '...' : 'Activate'}
+                        {isOperating ? 'Loading…' : 'Activate'}
                       </button>
                     )}
 
                     <button
                       onClick={() => handleDelete(name)}
                       disabled={isOperating}
-                      className={`rounded-full border px-3 py-1.5 text-xs font-medium uppercase tracking-[0.18em] transition disabled:opacity-50 ${
+                      className={`rounded border px-3 py-1.5 text-xs font-medium uppercase tracking-[0.12em] transition disabled:opacity-50 ${
                         deleteConfirm === name
-                          ? 'border-rose-300/30 bg-rose-300/10 text-rose-100'
+                          ? 'border-rose-300/40 bg-rose-300/15 text-rose-100'
                           : 'border-white/10 bg-white/[0.03] text-zinc-500 hover:border-rose-300/30 hover:bg-rose-300/10 hover:text-rose-100'
                       }`}
                     >

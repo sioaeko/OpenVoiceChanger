@@ -1,71 +1,146 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 
-function VolumeBar({ label, level }) {
+function VuMeter({ label, level }) {
   const percent = Math.min(Math.max(level * 100 * 3, 0), 100);
+  const [peak, setPeak] = useState(0);
+  const peakRef = useRef(0);
 
+  useEffect(() => {
+    // Peak hold with slow decay.
+    peakRef.current = Math.max(peakRef.current * 0.96, percent);
+    setPeak(peakRef.current);
+  }, [percent]);
+
+  // Solid zone coloring, VU convention: green / yellow / red.
   const barColor = useMemo(() => {
-    if (percent > 80) return 'from-emerald-500 via-yellow-500 to-rose-500';
-    if (percent > 50) return 'from-emerald-500 via-yellow-500 to-yellow-500';
-    return 'from-cyan-300 to-emerald-400';
+    if (percent > 82) return 'bg-rose-400';
+    if (percent > 60) return 'bg-amber-300';
+    return 'bg-emerald-400';
   }, [percent]);
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-1.5">
       <div className="flex items-center justify-between">
-        <span className="text-xs font-medium uppercase tracking-[0.2em] text-zinc-500">{label}</span>
-        <span className="text-[10px] font-mono uppercase tracking-[0.16em] text-zinc-600">
+        <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-500">{label}</span>
+        <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-zinc-600">
           {(level * 100).toFixed(1)}%
         </span>
       </div>
-      <div className="h-2.5 overflow-hidden rounded-full bg-white/5">
+      <div className="relative h-2 bg-white/[0.06]">
         <div
-          className={`h-full rounded-full bg-gradient-to-r ${barColor} transition-all duration-75 ease-out`}
+          className={`h-full ${barColor} transition-all duration-75 ease-out`}
           style={{ width: `${percent}%` }}
         />
+        {peak > 2 && (
+          <div
+            className="absolute top-0 h-full w-[2px] bg-white/70"
+            style={{ left: `calc(${peak}% - 1px)` }}
+          />
+        )}
       </div>
     </div>
   );
 }
 
-export default function MonitorDisplay({ inputLevel, outputLevel, latency }) {
-  const latencyMs = Math.round(latency);
-  const latencyColor =
-    latencyMs < 30
-      ? 'text-emerald-300'
-      : latencyMs < 80
-        ? 'text-amber-200'
-        : 'text-rose-300';
+function Sparkline({ history }) {
+  const path = useMemo(() => {
+    if (!history || history.length < 2) return '';
+    const w = 100;
+    const h = 28;
+    const max = Math.max(...history, 50);
+    const points = history.map((value, i) => {
+      const x = (i / (history.length - 1)) * w;
+      const y = h - Math.min(value / max, 1) * (h - 2) - 1;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    });
+    return `M${points.join(' L')}`;
+  }, [history]);
+
+  if (!path) {
+    return <div className="h-[28px]" />;
+  }
 
   return (
-    <section className="rounded-[28px] border border-white/10 bg-zinc-950/70 p-6 shadow-[0_20px_80px_rgba(0,0,0,0.35)] backdrop-blur-xl">
-      <div className="border-b border-white/10 pb-5">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.34em] text-zinc-500">
-          Monitor
-        </p>
-        <h2 className="mt-2 text-xl font-semibold tracking-[-0.04em] text-zinc-100">
-          Live levels
-        </h2>
+    <svg viewBox="0 0 100 28" preserveAspectRatio="none" className="h-[28px] w-full">
+      <path d={path} fill="none" stroke="rgba(161,161,170,0.8)" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+    </svg>
+  );
+}
+
+function StatChip({ label, value }) {
+  return (
+    <div className="rounded border border-white/[0.08] bg-black/25 px-3 py-2 text-center">
+      <p className="text-[9px] font-semibold uppercase tracking-[0.14em] text-zinc-500">{label}</p>
+      <p className="mt-1 font-mono text-sm font-semibold tabular-nums text-zinc-200">{value}</p>
+    </div>
+  );
+}
+
+export default function MonitorDisplay({
+  inputLevel,
+  outputLevel,
+  latency,
+  latencyHistory,
+  serverMs,
+  serverStats,
+}) {
+  const latencyMs = Math.round(latency);
+  const networkMs = Math.max(0, Math.round(latency - (serverMs || 0)));
+  const latencyColor =
+    latencyMs <= 0
+      ? 'text-zinc-500'
+      : latencyMs < 60
+        ? 'text-emerald-300'
+        : latencyMs < 150
+          ? 'text-amber-200'
+          : 'text-rose-300';
+
+  return (
+    <section className="panel p-5">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="panel-kicker">Monitor</p>
+          <h2 className="panel-title">Levels & latency</h2>
+        </div>
+        {serverStats?.effectsActive > 0 && (
+          <span className="rounded border border-white/10 bg-white/[0.04] px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-300">
+            {serverStats.effectsActive} FX
+          </span>
+        )}
       </div>
 
-      <div className="mt-6 space-y-4">
-        <VolumeBar label="Input" level={inputLevel} />
-        <VolumeBar label="Output" level={outputLevel} />
+      <div className="mt-5 space-y-3.5">
+        <VuMeter label="Input" level={inputLevel} />
+        <VuMeter label="Output" level={outputLevel} />
       </div>
 
-      <div className="mt-6 rounded-[24px] border border-white/10 bg-black/20 p-4">
-        <div className="grid grid-cols-[7.75rem_minmax(0,1fr)] items-start gap-4">
-          <div className="min-w-0">
-            <p className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-[0.24em] text-zinc-500">
-              Round Trip
+      <div className="mt-5 rounded border border-white/[0.08] bg-black/25 p-4">
+        <div className="flex items-end justify-between gap-3">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-500">
+              Round trip
             </p>
-            <p className={`mt-2 whitespace-nowrap text-3xl font-semibold tracking-[-0.05em] tabular-nums ${latencyColor}`}>
-              {latencyMs > 0 ? `${latencyMs} ms` : '--'}
+            <p className={`mt-1 font-mono text-3xl font-semibold tabular-nums tracking-[-0.04em] ${latencyColor}`}>
+              {latencyMs > 0 ? `${latencyMs}` : '--'}
+              <span className="ml-1 text-sm text-zinc-500">ms</span>
             </p>
           </div>
-          <p className="min-w-0 text-right text-sm text-zinc-500">
-            Includes WebSocket transfer and active model inference.
-          </p>
+          <div className="w-28 flex-shrink-0 sm:w-36">
+            <Sparkline history={latencyHistory} />
+          </div>
         </div>
+      </div>
+
+      <div className="mt-3 grid grid-cols-3 gap-2">
+        <StatChip
+          label="Model"
+          value={serverStats?.modelMs > 0 ? `${Math.round(serverStats.modelMs)}ms` : '--'}
+        />
+        <StatChip
+          label="DSP"
+          value={serverStats?.dspMs > 0 ? `${Math.max(1, Math.round(serverStats.dspMs))}ms` : '--'}
+        />
+        <StatChip label="Network" value={latencyMs > 0 ? `${networkMs}ms` : '--'} />
       </div>
     </section>
   );

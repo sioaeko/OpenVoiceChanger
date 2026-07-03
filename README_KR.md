@@ -26,23 +26,56 @@
 
 ## 기능
 
+### 실시간 스튜디오
 - AudioWorklet + 바이너리 WebSocket 기반 실시간 음성 변환
-- ONNX와 RVC 모델 지원
-- 브라우저에서 입력/출력 장치 선택
-- 스트리밍 중 피치와 F0 실시간 조절
-- 샘플 레이트, 청크 크기, 런타임 상태를 보는 `Settings` 모달
-- ONNX provider, PyTorch device, GPU, CUDA 상태 표시
-- 모델 업로드, 활성화, 삭제를 한 화면에서 처리
+- ONNX와 RVC 모델 지원 + **모델 없이 동작하는 DSP 모드** (체크포인트 없이 피치 시프트와 이펙트 사용)
+- 실시간 피치 **및 포먼트** 시프트, F0 방식 선택(PM / Harvest / Crepe / RMVPE / FCPE), RVC 고급 파라미터(index rate, RMS mix, protect)
+- **서버 사이드 12종 이펙트 랙**: 노이즈 게이트, 로봇, 위스퍼, 전화기, 디스토션, 비트크러시, 코러스, 에코, 리버브, 톤 EQ, 컴프레서, 출력 게인 — 모두 스트리밍 상태 유지형
+- **내장 보이스 프리셋 16종** (다람쥐, 저음, 로봇, 유령, 전화, 스타디움 등) + 사용자 프리셋 저장/삭제
+- 실시간 스펙트럼 비주얼라이저, 피크 홀드 VU 미터, 레이턴시 스파크라인, 서버 처리시간 분석(모델/DSP/네트워크)
+- **출력 녹음기** — 변환된 목소리를 WAV로 저장
+
+### 오프라인 변환
+- 오디오 파일(wav / mp3 / flac / ogg / m4a)을 업로드해 활성 모델 + 이펙트 체인으로 렌더링 후 WAV 다운로드
+
+### 관리
+- 드래그 앤 드롭 모델 업로드(`.pth` / `.pt` / `.onnx` + 동반 `.index` 파일), 한 번에 하나의 모델 활성화
+- 모델 메타데이터 배지: RVC 버전, 타깃 샘플레이트, F0 지원, index 유무, 디바이스
+- 샘플 레이트, 청크 크기, ONNX / PyTorch / GPU / CUDA 런타임 상태를 보는 설정 모달
 
 ## 스크린샷
 
-### 메인 화면
+### 스튜디오
 
-![OpenVoiceChanger main UI](docs/images/main-ui.png)
+![스튜디오 — 실시간 워크스페이스](docs/images/main-ui.png)
 
-### 설정 모달
+실시간 워크스페이스: 라이브 스펙트럼, 장치 라우팅, 출력 녹음기, 모델/DSP/네트워크 지연 분석이 붙은
+VU 미터, 그리고 피치·포먼트·F0 방식 컨트롤.
 
-![OpenVoiceChanger settings modal](docs/images/settings-modal.png)
+### 프리셋 & 이펙트 랙
+
+![보이스 프리셋과 DSP 이펙트 랙](docs/images/effects-rack.png)
+
+원클릭 보이스 프리셋 16종과 서버 사이드 12종 DSP 체인. 모델이 없어도 전부 동작하며,
+이펙트를 켜면 라이브 스트림에 즉시 반영됩니다.
+
+### 모델
+
+![모델 베이](docs/images/models.png)
+
+RVC / ONNX 체크포인트와 동반 `.index` 파일의 드래그 앤 드롭 업로드, 메타데이터 배지, 원클릭 활성화.
+
+### 컨버터
+
+![오프라인 파일 변환](docs/images/converter.png)
+
+오디오 파일 전체를 활성 모델 + 이펙트 체인으로 렌더링한 뒤 WAV로 다운로드합니다.
+
+### 설정
+
+![세션 런타임 설정](docs/images/settings-modal.png)
+
+스트림 기본값과 함께 백엔드가 인식한 ONNX provider, PyTorch device, GPU, CUDA 상태를 보여줍니다.
 
 ## 빠른 시작
 
@@ -138,12 +171,11 @@ npm run dev
 ## 웹 UI 사용 순서
 
 1. 브라우저에서 앱을 엽니다.
-2. `Model Bay`에 모델 파일을 업로드합니다.
-3. 사용할 모델에서 `Activate`를 누릅니다.
-4. `Settings`를 열어 샘플 레이트, 청크 크기, 런타임 상태를 확인합니다.
-5. 입력 장치와 출력 장치를 고릅니다.
-6. `Start Routing`을 누릅니다.
-7. 스트리밍 중 피치와 F0를 조절합니다.
+2. (선택) `Models` 탭에서 모델을 업로드하고 활성화합니다 — 모델이 없으면 순수 DSP 모드로 동작합니다.
+3. `Studio` 탭에서 입력/출력 장치를 고릅니다.
+4. `Start Voice Changer`를 누릅니다.
+5. 피치, 포먼트, F0 방식, 이펙트 랙, 원클릭 프리셋으로 목소리를 실시간으로 바꿉니다.
+6. 출력을 녹음하거나 `Converter` 탭에서 파일 전체를 변환합니다.
 
 ## API
 
@@ -157,6 +189,10 @@ npm run dev
 | `POST` | `/api/models/{name}/activate` | 모델 활성화 |
 | `POST` | `/api/models/deactivate` | 현재 모델 비활성화 |
 | `GET` | `/api/models/active` | 현재 활성 모델 조회 |
+| `GET` | `/api/presets/` | 내장 + 사용자 프리셋 목록 |
+| `POST` | `/api/presets/` | 사용자 프리셋 저장 |
+| `DELETE` | `/api/presets/{id}` | 사용자 프리셋 삭제 |
+| `POST` | `/api/convert/` | 오프라인 파일 변환 (multipart 업로드 → WAV) |
 | `WS` | `/ws/audio` | 실시간 오디오 스트리밍 |
 
 백엔드 실행 중 `/docs`에서 Swagger UI를 볼 수 있습니다.
@@ -166,8 +202,10 @@ npm run dev
 1. `/ws/audio`에 연결
 2. JSON 설정 전송: `{"sample_rate": 40000, "chunk_size": 4096}`
 3. 바이너리 오디오 프레임 전송: `[uint32 seq_num][uint32 reserved][float32[] PCM samples]`
-4. 같은 형식으로 처리된 오디오 프레임 수신
-5. 필요할 때 설정 전송: `{"pitch_shift": 3.0, "f0_method": "harvest"}`
+4. 같은 형식으로 처리된 오디오 프레임 수신 — 응답의 `reserved` 필드에 서버 처리시간(1/100 ms 단위)이 담깁니다
+5. 필요할 때 설정 전송:
+   `{"pitch_shift": 3.0, "formant_shift": -2.0, "f0_method": "rmvpe", "effects": {"reverb": {"enabled": true, "size": 0.6, "mix": 0.4}}}`
+6. 주기적 상태 JSON 수신: `{"type": "status", "latency_ms": …, "model_ms": …, "dsp_ms": …, "mode": "rvc|onnx|dsp", "effects_active": …}`
 
 ## 설정
 
@@ -189,6 +227,8 @@ npm run dev
 | `OVC_RVC_FILTER_RADIUS` | `3` | Harvest median filter 반경 |
 | `OVC_RVC_RMS_MIX_RATE` | `0.25` | RMS envelope blend |
 | `OVC_RVC_PROTECT` | `0.33` | 자음 보호 값 |
+| `OVC_PRESETS_PATH` | `data/presets.json` | 사용자 프리셋 저장 파일 |
+| `OVC_MAX_CONVERT_SECONDS` | `600` | 오프라인 변환 최대 오디오 길이 |
 
 ## 프로젝트 구조
 

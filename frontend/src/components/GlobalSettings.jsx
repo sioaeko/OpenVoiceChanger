@@ -9,9 +9,9 @@ function uniqueSorted(values) {
 
 function RuntimeBadge({ label, ready }) {
   return (
-    <div className={`rounded-2xl border px-4 py-3 ${
+    <div className={`rounded-md border px-4 py-3 ${
       ready
-        ? 'border-cyan-300/20 bg-cyan-300/10 text-cyan-50'
+        ? 'border-emerald-300/30 bg-emerald-400/[0.07] text-emerald-200'
         : 'border-white/10 bg-black/20 text-zinc-500'
     }`}
     >
@@ -27,7 +27,7 @@ function RuntimeBadge({ label, ready }) {
 
 function RuntimeItem({ label, value, detail }) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-4">
+    <div className="rounded-md border border-white/10 bg-black/20 px-4 py-4">
       <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-zinc-500">
         {label}
       </p>
@@ -62,7 +62,7 @@ export default function GlobalSettings({ config, onChange, disabled, onClose }) 
   const torchGpuReady = Boolean(config.runtime?.torch?.cudaAvailable);
 
   return (
-    <section className="rounded-[30px] border border-white/10 bg-zinc-950/92 p-6 shadow-[0_32px_120px_rgba(0,0,0,0.55)] backdrop-blur-2xl sm:p-7">
+    <section className="rounded-lg border border-white/10 bg-[#12101c]/95 p-6 shadow-[0_32px_120px_rgba(0,0,0,0.55)] backdrop-blur-2xl sm:p-7">
       <div className="flex flex-col gap-4 border-b border-white/10 pb-5 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <p className="text-[10px] font-semibold uppercase tracking-[0.34em] text-zinc-500">
@@ -79,7 +79,7 @@ export default function GlobalSettings({ config, onChange, disabled, onClose }) 
         {onClose ? (
           <button
             onClick={onClose}
-            className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-white/[0.03] text-zinc-400 transition hover:border-cyan-300/30 hover:bg-cyan-300/10 hover:text-cyan-100"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/[0.03] text-zinc-400 transition hover:border-white/25 hover:bg-white/[0.06] hover:text-zinc-200"
             aria-label="Close settings"
           >
             <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -91,7 +91,7 @@ export default function GlobalSettings({ config, onChange, disabled, onClose }) 
       </div>
 
       <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1.02fr)_minmax(0,0.98fr)]">
-        <div className="rounded-[24px] border border-white/10 bg-black/20 p-5">
+        <div className="rounded-md border border-white/10 bg-black/20 p-5">
           <div className="flex flex-col gap-2 border-b border-white/10 pb-4">
             <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-zinc-500">
               Stream Defaults
@@ -110,7 +110,7 @@ export default function GlobalSettings({ config, onChange, disabled, onClose }) 
                 value={config.sampleRate}
                 onChange={(event) => onChange?.({ sampleRate: Number(event.target.value) })}
                 disabled={disabled}
-                className="native-select-safe mt-3 w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-zinc-100 outline-none transition focus:border-cyan-300/40 focus:bg-white/[0.04] disabled:cursor-not-allowed disabled:opacity-50"
+                className="native-select-safe mt-3 w-full rounded-md border border-white/10 bg-black/20 px-4 py-3 text-sm text-zinc-100 outline-none transition focus:border-white/30 focus:bg-white/[0.04] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {sampleRateOptions.map((value) => (
                   <option key={value} value={value}>
@@ -128,7 +128,7 @@ export default function GlobalSettings({ config, onChange, disabled, onClose }) 
                 value={config.chunkSize}
                 onChange={(event) => onChange?.({ chunkSize: Number(event.target.value) })}
                 disabled={disabled}
-                className="native-select-safe mt-3 w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-zinc-100 outline-none transition focus:border-cyan-300/40 focus:bg-white/[0.04] disabled:cursor-not-allowed disabled:opacity-50"
+                className="native-select-safe mt-3 w-full rounded-md border border-white/10 bg-black/20 px-4 py-3 text-sm text-zinc-100 outline-none transition focus:border-white/30 focus:bg-white/[0.04] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {chunkSizeOptions.map((value) => (
                   <option key={value} value={value}>
@@ -146,7 +146,7 @@ export default function GlobalSettings({ config, onChange, disabled, onClose }) 
           </p>
         </div>
 
-        <div className="rounded-[24px] border border-white/10 bg-black/20 p-5">
+        <div className="rounded-md border border-white/10 bg-black/20 p-5">
           <div className="flex flex-col gap-4 border-b border-white/10 pb-4">
             <div>
               <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-zinc-500">

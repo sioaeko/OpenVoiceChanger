@@ -82,3 +82,52 @@ export async function getActiveModel() {
 export async function fetchConfig() {
   return request('/config');
 }
+
+export async function fetchPresets() {
+  return request('/presets/');
+}
+
+export async function savePreset(name, settings, emoji = '⭐') {
+  return request('/presets/', {
+    method: 'POST',
+    body: JSON.stringify({ name, settings, emoji }),
+  });
+}
+
+export async function deletePreset(presetId) {
+  return request(`/presets/${encodeURIComponent(presetId)}`, {
+    method: 'DELETE',
+  });
+}
+
+// Returns a WAV Blob of the converted audio.
+export async function convertFile(file, { pitchShift = 0, formantShift = 0, f0Method = 'pm', effects = {}, useModel = true } = {}) {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('pitch_shift', String(pitchShift));
+  formData.append('formant_shift', String(formantShift));
+  formData.append('f0_method', f0Method);
+  formData.append('effects', JSON.stringify(effects));
+  formData.append('use_model', String(useModel));
+
+  const response = await fetch(`${API_BASE}/convert/`, {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!response.ok) {
+    let data = null;
+    try {
+      data = await response.json();
+    } catch {
+      // Response may not be JSON
+    }
+    throw new ApiError(
+      data?.detail || `Conversion failed: ${response.status} ${response.statusText}`,
+      response.status,
+      data
+    );
+  }
+
+  return response.blob();
+}

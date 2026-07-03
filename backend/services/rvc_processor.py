@@ -81,6 +81,7 @@ class RvcProcessor:
 
         self._load_model()
         self._load_hubert_model()
+        self._fcpe_supported = self._detect_fcpe_support()
 
         logger.info(
             "RVC model loaded: %s (device=%s, target_sr=%d, speakers=%d, index=%s)",
@@ -237,18 +238,48 @@ class RvcProcessor:
         self._hubert_model = hubert_model.half() if self._runtime.is_half else hubert_model.float()
         self._hubert_model = self._hubert_model.eval()
 
+    def _detect_fcpe_support(self) -> bool:
+        """FCPE needs the torchfcpe package and an RVC pipeline that implements it."""
+        try:
+            import torchfcpe  # noqa: F401
+        except ImportError:
+            return False
+        try:
+            import inspect
+
+            return "fcpe" in inspect.getsource(type(self._pipeline))
+        except Exception:
+            return False
+
+    def _rmvpe_or_harvest(self) -> str:
+        rmvpe_model = self._rmvpe_root / "rmvpe.pt"
+        if rmvpe_model.exists():
+            os.environ["rmvpe_root"] = str(self._rmvpe_root)
+            return "rmvpe"
+        return "harvest"
+
     def _normalize_f0_method(self, f0_method: str) -> str:
         method = (f0_method or "pm").lower()
         if method == "dio":
             logger.debug("RVC runtime does not provide dio; using pm instead")
             return "pm"
+        if method == "fcpe":
+            if self._fcpe_supported:
+                return "fcpe"
+            fallback = self._rmvpe_or_harvest()
+            logger.warning(
+                "fcpe requested but torchfcpe or pipeline support is missing — using %s",
+                fallback,
+            )
+            return fallback
         if method == "rmvpe":
-            rmvpe_model = self._rmvpe_root / "rmvpe.pt"
-            if rmvpe_model.exists():
-                os.environ["rmvpe_root"] = str(self._rmvpe_root)
-                return "rmvpe"
-            logger.warning("rmvpe requested but %s is missing — using harvest", rmvpe_model)
-            return "harvest"
+            fallback = self._rmvpe_or_harvest()
+            if fallback != "rmvpe":
+                logger.warning(
+                    "rmvpe requested but %s is missing — using harvest",
+                    self._rmvpe_root / "rmvpe.pt",
+                )
+            return fallback
         if method not in {"harvest", "crepe", "pm"}:
             logger.warning("Unsupported f0 method '%s' — using harvest", f0_method)
             return "harvest"
@@ -382,6 +413,19 @@ class RvcProcessor:
                 return
             if self._torch.cuda.is_available():
                 self._torch.cuda.empty_cache()
+
+    def describe(self) -> dict:
+        """Return checkpoint metadata for API consumers."""
+        return {
+            "engine": "rvc",
+            "version": self._version,
+            "target_sample_rate": self._target_sample_rate,
+            "f0": bool(self._if_f0),
+            "speakers": self._speaker_count,
+            "index": self._index_path.name if self._index_path else None,
+            "device": self._runtime.device,
+            "half_precision": self._runtime.is_half,
+        }
 
     @property
     def loaded(self) -> bool:

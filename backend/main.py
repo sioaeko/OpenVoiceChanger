@@ -7,8 +7,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from backend.config import settings
-from backend.routers import models, websocket
+from backend.routers import convert, models, presets, websocket
 from backend.services.model_manager import ModelManager
+from backend.services.preset_store import PresetStore
 
 _onnx_available = False
 _torch_available = False
@@ -114,6 +115,7 @@ async def lifespan(app: FastAPI):
 
     manager = ModelManager(settings.MODELS_DIR)
     app.state.model_manager = manager
+    app.state.preset_store = PresetStore(settings.PRESETS_PATH)
 
     logger.info("Backend ready — listening on %s:%d", settings.HOST, settings.PORT)
     yield
@@ -127,7 +129,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="OpenVoiceChanger",
     description="Real-time voice changer API",
-    version="0.1.0",
+    version="2.0.0",
     lifespan=lifespan,
 )
 
@@ -148,6 +150,7 @@ async def health_check():
 @app.get("/api/config")
 async def get_config():
     return {
+        "version": app.version,
         "sample_rate": settings.SAMPLE_RATE,
         "chunk_size": settings.CHUNK_SIZE,
         "onnx_available": _onnx_available,
@@ -161,6 +164,8 @@ async def get_config():
 
 # Include API routers
 app.include_router(models.router)
+app.include_router(presets.router)
+app.include_router(convert.router)
 app.include_router(websocket.router)
 
 # Mount frontend static files if the dist directory exists

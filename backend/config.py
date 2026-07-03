@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     RVC_FILTER_RADIUS: int = 3
     RVC_RMS_MIX_RATE: float = 0.25
     RVC_PROTECT: float = 0.33
+    PRESETS_PATH: str = "data/presets.json"
+    MAX_CONVERT_SECONDS: int = 600
 
     model_config = {
         "env_prefix": "OVC_",

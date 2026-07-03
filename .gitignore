@@ -11,6 +11,9 @@ env/
 node_modules/
 frontend/dist/
 
+# User data (presets, recordings)
+data/
+
 # Models (large binary files)
 models/*.onnx
 models/*.pth

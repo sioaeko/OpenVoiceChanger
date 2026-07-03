@@ -1,29 +1,21 @@
 import React, { useState } from 'react';
 
-export default function AudioControls({
-  devices,
-  pipeline,
-  wsStatus,
-  activeModel,
-}) {
+export default function AudioControls({ devices, pipeline, wsStatus, activeModel }) {
   const [selectedInput, setSelectedInput] = useState('');
   const [selectedOutput, setSelectedOutput] = useState('');
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState(null);
 
-  const canStart =
-    wsStatus === 'connected' && !!activeModel && !pipeline.isRunning;
-  const canStop = pipeline.isRunning;
+  // A voice model is optional: without one, the stream runs through the
+  // server-side DSP chain (pitch + effects) instead.
+  const canStart = wsStatus === 'connected' && !pipeline.isRunning;
 
   const handleStart = async () => {
     setError(null);
     setStarting(true);
     try {
       await devices.refresh?.();
-      await pipeline.start(
-        selectedInput || undefined,
-        selectedOutput || undefined
-      );
+      await pipeline.start(selectedInput || undefined, selectedOutput || undefined);
     } catch (err) {
       setError(err.message || 'Failed to start audio pipeline');
     } finally {
@@ -37,42 +29,36 @@ export default function AudioControls({
   };
 
   return (
-    <section className="rounded-[28px] border border-white/10 bg-zinc-950/70 p-6 shadow-[0_20px_80px_rgba(0,0,0,0.35)] backdrop-blur-xl">
-      <div className="flex flex-col gap-4 border-b border-white/10 pb-5 sm:flex-row sm:items-end sm:justify-between">
+    <section className="panel p-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="text-[10px] font-semibold uppercase tracking-[0.34em] text-zinc-500">
-            Routing
-          </p>
-          <h2 className="mt-2 text-xl font-semibold tracking-[-0.04em] text-zinc-100">
-            Input and output path
-          </h2>
+          <p className="panel-kicker">Routing</p>
+          <h2 className="panel-title">Devices & stream</h2>
         </div>
-
-        <div className="flex flex-col items-start gap-3 sm:items-end">
-          <p className="max-w-sm text-sm text-zinc-400 sm:text-right">
-            Pick devices, activate the current model, and start local streaming.
-          </p>
+        <div className="flex items-center gap-2">
+          <span className="rounded border border-white/10 bg-white/[0.03] px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-400">
+            {activeModel ? 'Model engine' : 'DSP engine'}
+          </span>
           <button
             onClick={() => devices.refresh?.().catch(() => {})}
             disabled={pipeline.isRunning || devices.isRefreshing}
-            className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1.5 text-[11px] font-medium uppercase tracking-[0.16em] text-zinc-400 transition hover:border-cyan-300/30 hover:bg-cyan-300/10 hover:text-cyan-100 disabled:cursor-not-allowed disabled:opacity-40"
+            className="chip-button"
           >
-            {devices.isRefreshing ? 'Refreshing...' : 'Refresh Devices'}
+            {devices.isRefreshing ? 'Refreshing…' : 'Refresh'}
           </button>
         </div>
       </div>
 
-      <div className="mt-6 grid gap-5 lg:grid-cols-2">
+      <div className="mt-4 grid gap-4 sm:grid-cols-2">
         <div>
-          <label className="block text-xs font-medium uppercase tracking-[0.2em] text-zinc-500">
-            Input Device
+          <label className="block text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-500">
+            Input
           </label>
-
           <select
             value={selectedInput}
-            onChange={(e) => setSelectedInput(e.target.value)}
+            onChange={(event) => setSelectedInput(event.target.value)}
             disabled={pipeline.isRunning}
-            className="native-select-safe mt-3 w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-zinc-100 outline-none transition focus:border-cyan-300/40 focus:bg-white/[0.04] disabled:cursor-not-allowed disabled:opacity-50"
+            className="native-select-safe mt-2 w-full rounded-md border border-white/[0.08] bg-black/25 px-3 py-2.5 text-sm text-zinc-100 outline-none transition focus:border-white/30 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <option value="">Default Microphone</option>
             {devices.inputDevices.map((device) => (
@@ -81,23 +67,17 @@ export default function AudioControls({
               </option>
             ))}
           </select>
-
-          {!devices.hasLabels && (
-            <p className="mt-2 text-[11px] uppercase tracking-[0.16em] text-zinc-600">
-              Grant microphone permission to load actual device names.
-            </p>
-          )}
         </div>
 
         <div>
-          <label className="block text-xs font-medium uppercase tracking-[0.2em] text-zinc-500">
-            Output Device
+          <label className="block text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-500">
+            Output
           </label>
           <select
             value={selectedOutput}
-            onChange={(e) => setSelectedOutput(e.target.value)}
+            onChange={(event) => setSelectedOutput(event.target.value)}
             disabled={pipeline.isRunning}
-            className="native-select-safe mt-3 w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-zinc-100 outline-none transition focus:border-cyan-300/40 focus:bg-white/[0.04] disabled:cursor-not-allowed disabled:opacity-50"
+            className="native-select-safe mt-2 w-full rounded-md border border-white/[0.08] bg-black/25 px-3 py-2.5 text-sm text-zinc-100 outline-none transition focus:border-white/30 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <option value="">Default Speaker</option>
             {devices.outputDevices.map((device) => (
@@ -106,101 +86,79 @@ export default function AudioControls({
               </option>
             ))}
           </select>
-
-          {devices.permissionState === 'denied' && (
-            <p className="mt-2 text-[11px] uppercase tracking-[0.16em] text-rose-300">
-              Microphone permission is blocked, so the browser will not expose full device labels.
-            </p>
-          )}
         </div>
       </div>
 
-      <div className="mt-6 grid gap-4 border-t border-white/10 pt-5 lg:grid-cols-[1fr_auto] lg:items-center">
-        <div className="text-sm text-zinc-400">
-          Start only when the WebSocket is live and one model is active.
-        </div>
+      {!devices.hasLabels && (
+        <p className="mt-2 text-[11px] text-zinc-600">
+          Grant microphone permission to reveal device names.
+        </p>
+      )}
+      {devices.permissionState === 'denied' && (
+        <p className="mt-2 text-[11px] text-rose-300">
+          Microphone permission is blocked in the browser.
+        </p>
+      )}
 
+      <div className="mt-5">
         {!pipeline.isRunning ? (
           <button
             onClick={handleStart}
             disabled={!canStart || starting}
-            className="w-full rounded-full border border-cyan-300/30 bg-cyan-300/12 px-5 py-3 text-sm font-semibold uppercase tracking-[0.18em] text-cyan-50 transition hover:bg-cyan-300/18 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/[0.03] disabled:text-zinc-500 lg:w-auto"
+            className="w-full rounded-md bg-zinc-100 px-5 py-3 text-sm font-bold uppercase tracking-[0.14em] text-zinc-900 transition hover:bg-white disabled:cursor-not-allowed disabled:bg-white/[0.06] disabled:text-zinc-500"
           >
             {starting ? (
               <span className="flex items-center justify-center gap-2">
-                <svg
-                  className="h-4 w-4 animate-spin"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                >
-                  <circle
-                    className="opacity-25"
-                    cx="12"
-                    cy="12"
-                    r="10"
-                    stroke="currentColor"
-                    strokeWidth="4"
-                  />
-                  <path
-                    className="opacity-75"
-                    fill="currentColor"
-                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-                  />
+                <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                 </svg>
-                Starting...
+                Starting…
               </span>
             ) : (
               <span className="flex items-center justify-center gap-2">
-                <svg
-                  className="h-4 w-4"
-                  viewBox="0 0 24 24"
-                  fill="currentColor"
-                >
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
                   <polygon points="5 3 19 12 5 21 5 3" />
                 </svg>
-                Start Routing
+                Start Voice Changer
               </span>
             )}
           </button>
         ) : (
           <button
             onClick={handleStop}
-            disabled={!canStop}
-            className="w-full rounded-full border border-rose-300/30 bg-rose-300/12 px-5 py-3 text-sm font-semibold uppercase tracking-[0.18em] text-rose-50 transition hover:bg-rose-300/18 lg:w-auto"
+            className="w-full rounded-md border border-rose-400/40 bg-rose-500/10 px-5 py-3 text-sm font-bold uppercase tracking-[0.14em] text-rose-200 transition hover:bg-rose-500/20"
           >
             <span className="flex items-center justify-center gap-2">
-              <svg
-                className="h-4 w-4"
-                viewBox="0 0 24 24"
-                fill="currentColor"
-              >
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
                 <rect x="6" y="4" width="4" height="16" />
                 <rect x="14" y="4" width="4" height="16" />
               </svg>
-              Stop Routing
+              Stop
             </span>
           </button>
         )}
       </div>
 
-      {!pipeline.isRunning && !canStart && (
-        <p className="mt-4 text-xs uppercase tracking-[0.16em] text-zinc-500">
-          {wsStatus !== 'connected'
-            ? 'Waiting for server connection...'
-            : !activeModel
-              ? 'Load and activate a model to begin.'
-              : ''}
+      {!pipeline.isRunning && wsStatus !== 'connected' && (
+        <p className="mt-3 text-[11px] uppercase tracking-[0.12em] text-zinc-500">
+          Waiting for server connection…
+        </p>
+      )}
+      {!pipeline.isRunning && wsStatus === 'connected' && !activeModel && (
+        <p className="mt-3 text-[11px] text-zinc-500">
+          No model active — streaming will use the DSP pitch shifter and effects rack.
+          Load an RVC/ONNX model in the Models tab for full voice conversion.
         </p>
       )}
 
       {error && (
-        <div className="mt-4 rounded-2xl border border-rose-300/20 bg-rose-300/10 p-4">
-          <p className="text-sm text-rose-100">{error}</p>
+        <div className="mt-3 rounded-md border border-rose-400/25 bg-rose-500/10 p-3">
+          <p className="text-sm text-rose-200">{error}</p>
         </div>
       )}
-
       {devices.error && !error && (
-        <div className="mt-4 rounded-2xl border border-amber-200/20 bg-amber-200/10 p-4">
+        <div className="mt-3 rounded-md border border-amber-300/25 bg-amber-400/10 p-3">
           <p className="text-sm text-amber-100">{devices.error}</p>
         </div>
       )}

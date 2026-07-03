@@ -13,6 +13,8 @@ from backend.services.rvc_processor import RvcProcessor
 logger = logging.getLogger(__name__)
 
 ALLOWED_EXTENSIONS = {".onnx", ".pth", ".pt"}
+# Companion files accepted on upload but not registered as models.
+COMPANION_EXTENSIONS = {".index"}
 MODEL_TYPE_MAP = {
     ".onnx": "onnx",
     ".pth": "rvc",
@@ -65,6 +67,8 @@ class ModelManager:
             "size_bytes": path.stat().st_size,
             "path": str(path),
             "active": False,
+            "has_index": self._find_index_file(path.name) is not None,
+            "details": self._known_models.get(path.name, {}).get("details"),
         }
         self._known_models[path.name] = meta
         return meta
@@ -75,7 +79,12 @@ class ModelManager:
             active = self._active_model_name
         models = []
         for name, meta in self._known_models.items():
-            entry = {**meta, "active": name == active}
+            entry = {
+                **meta,
+                "active": name == active,
+                # Recomputed live so index files uploaded later are reflected.
+                "has_index": self._find_index_file(name) is not None,
+            }
             models.append(entry)
         return models
 
@@ -95,10 +104,9 @@ class ModelManager:
         safe_name = _sanitize_filename(name)
         ext = Path(safe_name).suffix.lower()
 
-        if ext not in ALLOWED_EXTENSIONS:
-            raise ValueError(
-                f"Unsupported file type '{ext}'. Allowed: {', '.join(ALLOWED_EXTENSIONS)}"
-            )
+        if ext not in ALLOWED_EXTENSIONS | COMPANION_EXTENSIONS:
+            allowed = ", ".join(sorted(ALLOWED_EXTENSIONS | COMPANION_EXTENSIONS))
+            raise ValueError(f"Unsupported file type '{ext}'. Allowed: {allowed}")
 
         dest = self._models_dir / safe_name
 
@@ -118,6 +126,16 @@ class ModelManager:
                         f"File exceeds maximum size ({MAX_MODEL_SIZE // (1024**3)} GB)"
                     )
                 f.write(chunk)
+
+        if ext in COMPANION_EXTENSIONS:
+            logger.info("Uploaded companion file: %s (%d bytes)", safe_name, total_written)
+            return {
+                "name": safe_name,
+                "type": "index",
+                "size_bytes": total_written,
+                "path": str(dest),
+                "active": False,
+            }
 
         meta = self._register_model(dest)
         logger.info("Uploaded model: %s (%d bytes)", safe_name, meta["size_bytes"])
@@ -185,6 +203,11 @@ class ModelManager:
             self._active_model_name = name
             self._active_processor = processor
 
+        try:
+            meta["details"] = processor.describe()
+        except Exception:
+            logger.exception("Failed to collect model details for %s", name)
+
         if isinstance(processor, RvcProcessor):
             try:
                 processor.warm_up()
@@ -196,6 +219,7 @@ class ModelManager:
             "name": name,
             "type": model_type,
             "status": "active",
+            "details": meta.get("details"),
         }
 
     def _find_index_file(self, model_name: str) -> str | None:

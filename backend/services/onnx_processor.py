@@ -93,6 +93,26 @@ class OnnxProcessor:
         else:
             return audio.reshape(1, -1)
 
+    def describe(self) -> dict:
+        """Return session metadata for API consumers."""
+        providers = []
+        try:
+            providers = list(self._session.get_providers())
+        except Exception:
+            logger.exception("Failed to read ONNX session providers")
+        return {
+            "engine": "onnx",
+            "provider": providers[0] if providers else None,
+            "inputs": [
+                {"name": inp.name, "shape": list(inp.shape) if inp.shape else None}
+                for inp in self._input_details
+            ],
+            "outputs": [
+                {"name": out.name, "shape": list(out.shape) if out.shape else None}
+                for out in self._output_details
+            ],
+        }
+
     def unload(self) -> None:
         """Release the ONNX session and free resources."""
         if self._session is not None:

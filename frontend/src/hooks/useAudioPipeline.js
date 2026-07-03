@@ -1,10 +1,14 @@
 import { useCallback, useRef, useState } from 'react';
 import { SAMPLE_RATE, CHUNK_SIZE } from '../lib/constants';
+import { encodeWav } from '../lib/wav';
 
 export default function useAudioPipeline(wsHook) {
   const [isRunning, setIsRunning] = useState(false);
   const [inputLevel, setInputLevel] = useState(0);
   const [outputLevel, setOutputLevel] = useState(0);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordSeconds, setRecordSeconds] = useState(0);
+  const [lastRecording, setLastRecording] = useState(null); // {url, seconds, size}
 
   const audioContextRef = useRef(null);
   const captureSinkRef = useRef(null);
@@ -16,6 +20,10 @@ export default function useAudioPipeline(wsHook) {
   const outputAnalyserRef = useRef(null);
   const animFrameRef = useRef(null);
   const seqNumRef = useRef(0);
+  const recordingRef = useRef(false);
+  const recordChunksRef = useRef([]);
+  const recordSamplesRef = useRef(0);
+  const sampleRateRef = useRef(SAMPLE_RATE);
 
   const updateLevels = useCallback(() => {
     if (inputAnalyserRef.current) {
@@ -38,6 +46,10 @@ export default function useAudioPipeline(wsHook) {
       setOutputLevel(Math.sqrt(sum / data.length));
     }
 
+    if (recordingRef.current) {
+      setRecordSeconds(recordSamplesRef.current / sampleRateRef.current);
+    }
+
     animFrameRef.current = requestAnimationFrame(updateLevels);
   }, []);
 
@@ -49,6 +61,7 @@ export default function useAudioPipeline(wsHook) {
           latencyHint: 'interactive',
         });
         audioContextRef.current = audioContext;
+        sampleRateRef.current = SAMPLE_RATE;
 
         if (outputDeviceId && audioContext.setSinkId) {
           await audioContext.setSinkId(outputDeviceId);
@@ -88,13 +101,13 @@ export default function useAudioPipeline(wsHook) {
         captureSinkRef.current = captureSink;
 
         const inputAnalyser = audioContext.createAnalyser();
-        inputAnalyser.fftSize = 256;
-        inputAnalyser.smoothingTimeConstant = 0.8;
+        inputAnalyser.fftSize = 2048;
+        inputAnalyser.smoothingTimeConstant = 0.82;
         inputAnalyserRef.current = inputAnalyser;
 
         const outputAnalyser = audioContext.createAnalyser();
-        outputAnalyser.fftSize = 256;
-        outputAnalyser.smoothingTimeConstant = 0.8;
+        outputAnalyser.fftSize = 2048;
+        outputAnalyser.smoothingTimeConstant = 0.82;
         outputAnalyserRef.current = outputAnalyser;
 
         source.connect(inputAnalyser);
@@ -115,6 +128,10 @@ export default function useAudioPipeline(wsHook) {
         wsHook.setOnAudioReceived((pcmData) => {
           if (playbackNodeRef.current) {
             playbackNodeRef.current.port.postMessage(pcmData);
+          }
+          if (recordingRef.current) {
+            recordChunksRef.current.push(pcmData.slice(0));
+            recordSamplesRef.current += pcmData.length;
           }
         });
 
@@ -140,7 +157,54 @@ export default function useAudioPipeline(wsHook) {
     [wsHook, updateLevels]
   );
 
+  const finalizeRecording = useCallback(() => {
+    recordingRef.current = false;
+    setIsRecording(false);
+
+    const chunks = recordChunksRef.current;
+    const samples = recordSamplesRef.current;
+    recordChunksRef.current = [];
+    recordSamplesRef.current = 0;
+    setRecordSeconds(0);
+
+    if (!chunks.length) return null;
+
+    const blob = encodeWav(chunks, sampleRateRef.current);
+    const recording = {
+      url: URL.createObjectURL(blob),
+      seconds: samples / sampleRateRef.current,
+      size: blob.size,
+    };
+    setLastRecording((prev) => {
+      if (prev?.url) URL.revokeObjectURL(prev.url);
+      return recording;
+    });
+    return recording;
+  }, []);
+
+  const startRecording = useCallback(() => {
+    if (recordingRef.current) return;
+    recordChunksRef.current = [];
+    recordSamplesRef.current = 0;
+    recordingRef.current = true;
+    setRecordSeconds(0);
+    setIsRecording(true);
+  }, []);
+
+  const stopRecording = useCallback(() => finalizeRecording(), [finalizeRecording]);
+
+  const discardRecording = useCallback(() => {
+    setLastRecording((prev) => {
+      if (prev?.url) URL.revokeObjectURL(prev.url);
+      return null;
+    });
+  }, []);
+
   const stop = useCallback(() => {
+    if (recordingRef.current) {
+      finalizeRecording();
+    }
+
     if (animFrameRef.current) {
       cancelAnimationFrame(animFrameRef.current);
       animFrameRef.current = null;
@@ -185,7 +249,26 @@ export default function useAudioPipeline(wsHook) {
     setInputLevel(0);
     setOutputLevel(0);
     setIsRunning(false);
-  }, [wsHook]);
+  }, [wsHook, finalizeRecording]);
 
-  return { start, stop, isRunning, inputLevel, outputLevel };
+  // Stable accessor so canvas components can read the live analyser nodes.
+  const getAnalysers = useCallback(() => ({
+    input: inputAnalyserRef.current,
+    output: outputAnalyserRef.current,
+  }), []);
+
+  return {
+    start,
+    stop,
+    isRunning,
+    inputLevel,
+    outputLevel,
+    getAnalysers,
+    isRecording,
+    recordSeconds,
+    lastRecording,
+    startRecording,
+    stopRecording,
+    discardRecording,
+  };
 }
