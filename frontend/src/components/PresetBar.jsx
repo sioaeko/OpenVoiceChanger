@@ -9,11 +9,18 @@ function PresetChip({ preset, active, onApply, onDelete }) {
         title={preset.description}
         className={`rounded border px-3 py-2 text-sm font-medium transition ${
           active
-            ? 'border-emerald-300/50 bg-emerald-400/[0.08] text-emerald-100'
-            : 'border-white/[0.08] bg-black/25 text-zinc-400 hover:border-white/20 hover:text-zinc-200'
+            ? 'border-ok-line-strong bg-ok-bg-strong text-ok-fg'
+            : 'border-line bg-input text-fg-muted hover:border-line-hover hover:text-fg-secondary'
         }`}
       >
-        <span className="whitespace-nowrap">{preset.name}</span>
+        <span className="flex items-center gap-1.5 whitespace-nowrap">
+          {preset.emoji && (
+            <span aria-hidden="true" className="text-base leading-none">
+              {preset.emoji}
+            </span>
+          )}
+          {preset.name}
+        </span>
       </button>
       {onDelete && (
         <button
@@ -22,7 +29,7 @@ function PresetChip({ preset, active, onApply, onDelete }) {
             onDelete(preset);
           }}
           title="Delete preset"
-          className="absolute -right-1.5 -top-1.5 hidden h-4 w-4 items-center justify-center rounded-sm border border-rose-300/40 bg-[#18090d] text-[9px] text-rose-200 group-hover:flex"
+          className="absolute -right-1.5 -top-1.5 hidden h-4 w-4 items-center justify-center rounded-sm border border-danger-line-strong bg-panel text-[9px] text-danger-fg group-hover:flex"
         >
           ✕
         </button>
@@ -102,7 +109,7 @@ export default function PresetBar({ activePresetId, onApplyPreset, getCurrentSet
                 placeholder="Preset name"
                 maxLength={40}
                 autoFocus
-                className="w-40 rounded border border-white/20 bg-black/40 px-3 py-1.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-white/40"
+                className="w-40 rounded border border-line-hover bg-input px-3 py-1.5 text-sm text-fg outline-none placeholder:text-fg-faint focus:border-line-hover"
               />
               <button onClick={handleSave} disabled={saving || !saveName.trim()} className="chip-button">
                 {saving ? '...' : 'Save'}
@@ -119,7 +126,7 @@ export default function PresetBar({ activePresetId, onApplyPreset, getCurrentSet
         </div>
       </div>
 
-      {error && <p className="mt-2 text-xs text-rose-300">{error}</p>}
+      {error && <p className="mt-2 text-xs text-danger-fg">{error}</p>}
 
       <div className="mt-4 flex gap-2 overflow-x-auto pb-2 pt-2">
         {presets.builtin.map((preset) => (
@@ -130,7 +137,7 @@ export default function PresetBar({ activePresetId, onApplyPreset, getCurrentSet
             onApply={onApplyPreset}
           />
         ))}
-        {presets.user.length > 0 && <div className="mx-1 w-px flex-shrink-0 self-stretch bg-white/10" />}
+        {presets.user.length > 0 && <div className="mx-1 w-px flex-shrink-0 self-stretch bg-line-strong" />}
         {presets.user.map((preset) => (
           <PresetChip
             key={preset.id}

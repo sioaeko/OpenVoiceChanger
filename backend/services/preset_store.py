@@ -11,6 +11,8 @@ import re
 import threading
 from pathlib import Path
 
+from backend.services.preset_settings import normalize_preset_settings
+
 logger = logging.getLogger(__name__)
 
 MAX_USER_PRESETS = 100
@@ -292,11 +294,9 @@ class PresetStore:
             "name": name,
             "emoji": (emoji or "⭐")[:4],
             "description": "Custom preset",
-            "settings": {
-                "pitch_shift": float(settings.get("pitch_shift", 0) or 0),
-                "formant_shift": float(settings.get("formant_shift", 0) or 0),
-                "effects": settings.get("effects") if isinstance(settings.get("effects"), dict) else {},
-            },
+            # Stores the full Voice Lab state, not just pitch/formant/effects,
+            # so applying a preset restores everything the user tuned.
+            "settings": normalize_preset_settings(settings),
         }
 
         with self._lock:

@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 
 from backend.config import settings
 from backend.routers import convert, models, presets, websocket
+from backend.security import cors_origins
 from backend.services.model_manager import ModelManager
 from backend.services.preset_store import PresetStore
 
@@ -117,6 +118,23 @@ async def lifespan(app: FastAPI):
     app.state.model_manager = manager
     app.state.preset_store = PresetStore(settings.PRESETS_PATH)
 
+    if settings.ALLOW_ANY_ORIGIN:
+        logger.warning(
+            "OVC_ALLOW_ANY_ORIGIN is enabled — any website may call this API and "
+            "open the audio WebSocket. Only use this on a trusted network."
+        )
+    else:
+        logger.info(
+            "Allowed cross-origin callers: %s (same-origin requests are always allowed)",
+            ", ".join(_cors_origins) or "none",
+        )
+    if settings.HOST not in {"127.0.0.1", "localhost", "::1"}:
+        logger.warning(
+            "Binding to %s exposes the studio beyond this machine — anyone who can "
+            "reach it can upload and activate models.",
+            settings.HOST,
+        )
+
     logger.info("Backend ready — listening on %s:%d", settings.HOST, settings.PORT)
     yield
 
@@ -133,11 +151,15 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS middleware
+# CORS middleware. Cross-origin access is limited to the configured allowlist;
+# the frontend served from this backend is same-origin and never hits CORS at
+# all. Credentials are only offered to a concrete allowlist — pairing them with
+# a "*" origin is rejected by browsers anyway.
+_cors_origins = cors_origins(settings.CORS_ORIGINS, settings.ALLOW_ANY_ORIGIN)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
-    allow_credentials=True,
+    allow_origins=_cors_origins,
+    allow_credentials=not settings.ALLOW_ANY_ORIGIN,
     allow_methods=["*"],
     allow_headers=["*"],
 )

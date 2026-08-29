@@ -1,0 +1,23 @@
+# Dependencies needed to run the test suite.
+#
+# Deliberately not `-r requirements.txt`: the full runtime pulls in the RVC
+# inference stack (fairseq from a git fork, faiss, librosa, numba, pyworld,
+# torchcrepe). None of it is exercised by these tests — they cover the
+# transport, the DSP chain, origin validation and checkpoint loading — and
+# numba 0.58.1 has no wheels for current Pythons, so installing the full set
+# would make CI slow and brittle for no extra coverage.
+#
+# Install torch from the CPU wheel index in CI:
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+fastapi>=0.115.0
+pydantic-settings>=2.6.0
+python-multipart>=0.0.18
+numpy>=1.26.0
+scipy>=1.14.0
+onnxruntime>=1.19.0
+httpx>=0.27.0
+pytest>=8.0.0
+# Supplies the pytest plugin behind @pytest.mark.anyio (already a FastAPI
+# transitive dependency; pinned here so the async tests cannot silently skip).
+anyio>=4.0.0

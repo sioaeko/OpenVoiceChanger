@@ -15,6 +15,7 @@ export default function useWebSocket() {
     mode: 'dsp',
     activeModel: null,
     effectsActive: 0,
+    bypass: false,
   });
 
   const wsRef = useRef(null);
@@ -27,6 +28,9 @@ export default function useWebSocket() {
   const sendTimestampsRef = useRef(new Map());
   const pendingAudioFramesRef = useRef([]);
   const lastServerMsUpdateRef = useRef(0);
+  // Rate the live AudioContext actually runs at, once a stream has started.
+  // Null until then, when the configured default is the best guess we have.
+  const streamSampleRateRef = useRef(null);
 
   const sendBinaryFrame = useCallback((ws, buffer, seqNum) => {
     sendTimestampsRef.current.set(seqNum, performance.now());
@@ -104,8 +108,10 @@ export default function useWebSocket() {
         pendingAudioFramesRef.current = [];
         sendTimestampsRef.current.clear();
 
+        // Re-announce the live stream's real rate after a reconnect, so the
+        // server never resumes processing with a stale assumption.
         ws.send(JSON.stringify({
-          sample_rate: SAMPLE_RATE,
+          sample_rate: streamSampleRateRef.current ?? SAMPLE_RATE,
           chunk_size: CHUNK_SIZE,
         }));
 
@@ -156,6 +162,8 @@ export default function useWebSocket() {
               mode: msg.mode ?? 'dsp',
               activeModel: msg.active_model ?? null,
               effectsActive: msg.effects_active ?? 0,
+              // Older backends omit this; absence means "not bypassed".
+              bypass: Boolean(msg.bypass),
             });
           }
           onSettingsResponseRef.current?.(msg);
@@ -217,6 +225,14 @@ export default function useWebSocket() {
     ws.send(JSON.stringify({ type: 'settings', ...settings }));
   }, []);
 
+  /** Publish the rate the AudioContext actually runs at (see useAudioPipeline). */
+  const setStreamSampleRate = useCallback((rate) => {
+    const numeric = Number(rate);
+    if (!Number.isFinite(numeric) || numeric <= 0) return;
+    streamSampleRateRef.current = Math.round(numeric);
+    sendSettings({ sample_rate: streamSampleRateRef.current });
+  }, [sendSettings]);
+
   const setOnAudioReceived = useCallback((callback) => {
     onAudioReceivedRef.current = callback;
   }, []);
@@ -235,6 +251,7 @@ export default function useWebSocket() {
     disconnect,
     sendAudio,
     sendSettings,
+    setStreamSampleRate,
     setOnAudioReceived,
     setOnSettingsResponse,
     setOnOpen,

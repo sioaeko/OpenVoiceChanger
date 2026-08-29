@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import re
@@ -7,6 +8,7 @@ from pathlib import Path
 import numpy as np
 from fastapi import UploadFile
 
+from backend.config import DEFAULT_F0_METHOD
 from backend.services.onnx_processor import OnnxProcessor
 from backend.services.rvc_processor import RvcProcessor
 
@@ -61,24 +63,29 @@ class ModelManager:
 
     def _register_model(self, path: Path) -> dict:
         """Register a model file and return its metadata."""
-        meta = {
-            "name": path.name,
-            "type": MODEL_TYPE_MAP.get(path.suffix, "unknown"),
-            "size_bytes": path.stat().st_size,
-            "path": str(path),
-            "active": False,
-            "has_index": self._find_index_file(path.name) is not None,
-            "details": self._known_models.get(path.name, {}).get("details"),
-        }
-        self._known_models[path.name] = meta
-        return meta
+        has_index = self._find_index_file(path.name) is not None
+        size_bytes = path.stat().st_size
+        with self._lock:
+            details = self._known_models.get(path.name, {}).get("details")
+            meta = {
+                "name": path.name,
+                "type": MODEL_TYPE_MAP.get(path.suffix, "unknown"),
+                "size_bytes": size_bytes,
+                "path": str(path),
+                "active": False,
+                "has_index": has_index,
+                "details": details,
+            }
+            self._known_models[path.name] = meta
+            return {**meta}
 
     def list_models(self) -> list[dict]:
         """Return metadata for all known models."""
         with self._lock:
             active = self._active_model_name
+            known_models = [(name, {**meta}) for name, meta in self._known_models.items()]
         models = []
-        for name, meta in self._known_models.items():
+        for name, meta in known_models:
             entry = {
                 **meta,
                 "active": name == active,
@@ -137,7 +144,10 @@ class ModelManager:
                 "active": False,
             }
 
-        meta = self._register_model(dest)
+        # Registration touches metadata protected by the same lock used during
+        # activation. Wait for it in a worker so an in-progress model load can
+        # never make the asyncio event loop wait on a threading.Lock.
+        meta = await asyncio.to_thread(self._register_model, dest)
         logger.info("Uploaded model: %s (%d bytes)", safe_name, meta["size_bytes"])
         return meta
 
@@ -147,18 +157,16 @@ class ModelManager:
         Raises:
             FileNotFoundError: If the model is not known.
         """
-        if name not in self._known_models:
-            raise FileNotFoundError(f"Model not found: {name}")
-
         with self._lock:
+            meta = self._known_models.get(name)
+            if meta is None:
+                raise FileNotFoundError(f"Model not found: {name}")
             if self._active_model_name == name:
                 self._deactivate_locked()
-
-        model_path = Path(self._known_models[name]["path"])
-        if model_path.exists():
-            model_path.unlink()
-
-        del self._known_models[name]
+            model_path = Path(meta["path"])
+            if model_path.exists():
+                model_path.unlink()
+            del self._known_models[name]
         logger.info("Deleted model: %s", name)
 
     def activate_model(self, name: str) -> dict:
@@ -174,12 +182,11 @@ class ModelManager:
             FileNotFoundError: If the model is not known.
             RuntimeError: If the model fails to load.
         """
-        if name not in self._known_models:
-            raise FileNotFoundError(f"Model not found: {name}")
-
-        meta = self._known_models[name]
-
         with self._lock:
+            meta = self._known_models.get(name)
+            if meta is None:
+                raise FileNotFoundError(f"Model not found: {name}")
+
             # Deactivate current model first
             if self._active_processor is not None:
                 self._deactivate_locked()
@@ -200,26 +207,29 @@ class ModelManager:
                 logger.error("Failed to load model %s: %s", name, exc)
                 raise RuntimeError(f"Failed to load model: {exc}") from exc
 
+            try:
+                meta["details"] = processor.describe()
+            except Exception:
+                logger.exception("Failed to collect model details for %s", name)
+
+            if isinstance(processor, RvcProcessor):
+                try:
+                    processor.warm_up()
+                except Exception as exc:
+                    logger.warning("RVC warm-up failed for %s: %s", name, exc)
+
+            # Publish the new processor only after loading and warm-up finish,
+            # so readers never observe a half-ready model.
             self._active_model_name = name
             self._active_processor = processor
-
-        try:
-            meta["details"] = processor.describe()
-        except Exception:
-            logger.exception("Failed to collect model details for %s", name)
-
-        if isinstance(processor, RvcProcessor):
-            try:
-                processor.warm_up()
-            except Exception as exc:
-                logger.warning("RVC warm-up failed for %s: %s", name, exc)
+            details = meta.get("details")
 
         logger.info("Activated model: %s (type: %s)", name, model_type)
         return {
             "name": name,
             "type": model_type,
             "status": "active",
-            "details": meta.get("details"),
+            "details": details,
         }
 
     def _find_index_file(self, model_name: str) -> str | None:
@@ -248,15 +258,15 @@ class ModelManager:
         """Return info about the currently active model, or None."""
         with self._lock:
             name = self._active_model_name
-        if name is None:
-            return None
-        meta = self._known_models.get(name)
-        if meta is None:
-            return None
-        return {
-            **meta,
-            "active": True,
-        }
+            if name is None:
+                return None
+            meta = self._known_models.get(name)
+            if meta is None:
+                return None
+            return {
+                **meta,
+                "active": True,
+            }
 
     def process_audio(self, audio: np.ndarray, settings: dict) -> np.ndarray:
         """Route audio through the active processor.
@@ -279,7 +289,7 @@ class ModelManager:
         pitch_shift = settings.get("pitch_shift", 0.0)
 
         if isinstance(processor, RvcProcessor):
-            f0_method = settings.get("f0_method", "pm")
+            f0_method = settings.get("f0_method", DEFAULT_F0_METHOD)
             sample_rate = int(settings.get("sample_rate", 40000))
             stream_id = settings.get("stream_id")
             return processor.process(
@@ -292,6 +302,9 @@ class ModelManager:
                 filter_radius=settings.get("filter_radius"),
                 rms_mix_rate=settings.get("rms_mix_rate"),
                 protect=settings.get("protect"),
+                # Realtime callers stream chunks against a rolling context;
+                # the offline converter renders a whole file in one pass.
+                use_stream_context=bool(settings.get("use_stream_context", True)),
             )
         else:
             return processor.process(audio, pitch_shift=pitch_shift)
@@ -307,8 +320,10 @@ class ModelManager:
 
     @property
     def active_model_name(self) -> str | None:
-        return self._active_model_name
+        with self._lock:
+            return self._active_model_name
 
     @property
     def active_processor(self) -> OnnxProcessor | RvcProcessor | None:
-        return self._active_processor
+        with self._lock:
+            return self._active_processor

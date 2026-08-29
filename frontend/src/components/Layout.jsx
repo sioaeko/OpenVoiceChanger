@@ -38,39 +38,49 @@ const TABS = [
 
 export default function Layout({ children, tab, onTabChange, statusSlot = null, headerActions = null }) {
   return (
-    <div className="min-h-screen text-zinc-100">
+    <div className="min-h-screen text-fg">
       <div className="flex min-h-screen flex-col">
-        <header className="sticky top-0 z-40 border-b border-white/[0.08] bg-[#0a0a0c]/95 backdrop-blur-sm">
+        <header className="sticky top-0 z-40 border-b border-line bg-header backdrop-blur-sm">
           <div className="mx-auto flex w-full max-w-[1560px] flex-wrap items-center gap-x-6 gap-y-3 px-4 py-3 sm:px-6 lg:px-8">
             <div className="flex items-center gap-3">
-              <div className="flex h-8 w-8 items-center justify-center rounded-md border border-white/10 bg-white/[0.06]">
-                <svg className="h-4 w-4 text-zinc-200" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <div className="flex h-8 w-8 items-center justify-center rounded-md border border-line-strong bg-control-hover">
+                <svg className="h-4 w-4 text-fg-secondary" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                   <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
                   <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
                   <line x1="12" y1="19" x2="12" y2="22" />
                 </svg>
               </div>
               <div className="leading-tight">
-                <p className="text-sm font-semibold tracking-[-0.02em] text-zinc-100">
+                <p className="text-sm font-semibold tracking-normal text-fg">
                   OpenVoiceChanger
                 </p>
-                <p className="text-[10px] font-medium uppercase tracking-[0.2em] text-zinc-500">
+                <p className="text-[10px] font-medium uppercase tracking-[0.2em] text-fg-subtle">
                   Realtime Voice Studio
                 </p>
               </div>
             </div>
 
-            <nav className="order-3 flex w-full items-center gap-0.5 rounded-md border border-white/[0.08] bg-black/30 p-0.5 sm:order-none sm:w-auto">
+            {/* The trough stays dark so the raised selected pill reads clearly
+                against it — lightening the container here would flatten the
+                selected/unselected difference. */}
+            <nav className="order-3 flex w-full items-center gap-0.5 rounded-md border border-[color:var(--frost-border)] bg-sunken p-0.5 shadow-[var(--frost-shadow)] sm:order-none sm:w-auto">
               {TABS.map((item) => {
                 const selected = tab === item.id;
                 return (
                   <button
                     key={item.id}
                     onClick={() => onTabChange?.(item.id)}
-                    className={`flex flex-1 items-center justify-center gap-2 rounded px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] transition sm:flex-initial ${
+                    aria-current={selected ? 'page' : undefined}
+                    data-selected={selected}
+                    /* Shared `border` gives every pill the same 1px box so
+                       switching tabs never shifts widths; the colour comes from
+                       .frost-control when selected and is transparent when not.
+                       Keeping `rounded` (4px) here overrides the 8px token on
+                       purpose — this pill nests inside a 6px trough. */
+                    className={`flex flex-1 items-center justify-center gap-1 whitespace-nowrap rounded border px-1 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] sm:flex-initial sm:gap-2 sm:px-4 ${
                       selected
-                        ? 'bg-white/[0.09] text-zinc-100'
-                        : 'text-zinc-500 hover:text-zinc-300'
+                        ? 'frost-control text-fg'
+                        : 'border-transparent text-fg-subtle transition-colors duration-150 ease-out hover:text-fg-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--frost-focus)]'
                     }`}
                   >
                     {item.icon}
@@ -93,8 +103,8 @@ export default function Layout({ children, tab, onTabChange, statusSlot = null, 
           </div>
         </main>
 
-        <footer className="border-t border-white/[0.08] py-3">
-          <p className="mx-auto w-full max-w-[1560px] px-4 text-[10px] uppercase tracking-[0.18em] text-zinc-600 sm:px-6 lg:px-8">
+        <footer className="border-t border-line py-3">
+          <p className="mx-auto w-full max-w-[1560px] px-4 text-[10px] uppercase tracking-[0.18em] text-fg-faint sm:px-6 lg:px-8">
             Local realtime RVC · ONNX · DSP voice studio
           </p>
         </footer>

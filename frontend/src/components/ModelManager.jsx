@@ -24,8 +24,8 @@ function getModelType(name) {
 
 function MetaBadge({ children, tone = 'default' }) {
   const tones = {
-    default: 'border-white/10 bg-white/[0.03] text-zinc-500',
-    emerald: 'border-emerald-300/30 bg-emerald-400/[0.07] text-emerald-200',
+    default: 'border-line-strong bg-control text-fg-subtle',
+    emerald: 'border-ok-line bg-ok-bg text-ok-fg',
   };
   return (
     <span className={`rounded-sm border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.1em] ${tones[tone] || tones.default}`}>
@@ -79,13 +79,24 @@ export default function ModelManager({ activeModel = null, onActiveModelChange }
     onActiveModelChange?.(name);
   }, [onActiveModelChange]);
 
-  const handleUpload = async (file) => {
-    if (!file) return;
-
+  const validateUploadFile = (file) => {
     const validExtensions = ['.onnx', '.pth', '.pt', '.index'];
     const ext = '.' + file.name.split('.').pop().toLowerCase();
     if (!validExtensions.includes(ext)) {
-      setError('Invalid file type. Please upload .onnx, .pth, .pt, or .index files.');
+      return 'Invalid file type. Please upload .onnx, .pth, .pt, or .index files.';
+    }
+    return null;
+  };
+
+  // Uploaded one at a time: a single progress bar can only honestly track one
+  // transfer, and checkpoints are large enough that parallel uploads just
+  // compete for the same bandwidth.
+  const handleUploadAll = async (files) => {
+    if (uploading || files.length === 0) return;
+
+    const validationError = files.map(validateUploadFile).find(Boolean);
+    if (validationError) {
+      setError(validationError);
       return;
     }
 
@@ -93,38 +104,28 @@ export default function ModelManager({ activeModel = null, onActiveModelChange }
     setUploadProgress(0);
     setError(null);
 
-    let progressInterval;
     try {
-      progressInterval = setInterval(() => {
-        setUploadProgress((prev) => Math.min(prev + 10, 90));
-      }, 200);
-
-      await uploadModel(file);
-
-      clearInterval(progressInterval);
-      progressInterval = null;
-      setUploadProgress(100);
-
-      setTimeout(() => {
-        setUploading(false);
+      for (const file of files) {
         setUploadProgress(0);
-      }, 500);
-
-      await loadModels();
+        // Real byte-level transport progress from the XHR upload stream.
+        // eslint-disable-next-line no-await-in-loop
+        await uploadModel(file, setUploadProgress);
+        setUploadProgress(100);
+        // Keep the model list truthful even if a later file fails.
+        // eslint-disable-next-line no-await-in-loop
+        await loadModels();
+      }
     } catch (err) {
       setError(err.message || 'Upload failed');
+    } finally {
       setUploading(false);
       setUploadProgress(0);
-    } finally {
-      if (progressInterval) {
-        clearInterval(progressInterval);
-      }
     }
   };
 
   const handleFileSelect = (e) => {
     const files = Array.from(e.target.files || []);
-    files.forEach((file) => handleUpload(file));
+    handleUploadAll(files);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -132,7 +133,7 @@ export default function ModelManager({ activeModel = null, onActiveModelChange }
     e.preventDefault();
     setDragActive(false);
     const files = Array.from(e.dataTransfer.files || []);
-    files.forEach((file) => handleUpload(file));
+    handleUploadAll(files);
   };
 
   const handleActivate = async (name) => {
@@ -197,7 +198,7 @@ export default function ModelManager({ activeModel = null, onActiveModelChange }
         <button
           onClick={loadModels}
           disabled={loading}
-          className="rounded border border-white/10 bg-white/[0.03] p-2 text-zinc-500 transition hover:border-white/25 hover:bg-white/[0.06] hover:text-zinc-200"
+          className="rounded border border-line-strong bg-control p-2 text-fg-subtle transition hover:border-line-hover hover:bg-control-hover hover:text-fg-secondary"
           title="Refresh models"
         >
           <svg
@@ -216,8 +217,8 @@ export default function ModelManager({ activeModel = null, onActiveModelChange }
         </button>
       </div>
 
-      <p className="mt-2 text-sm text-zinc-500">
-        One model runs at a time. Matching <code className="text-zinc-400">.index</code> files
+      <p className="mt-2 text-sm text-fg-subtle">
+        One model runs at a time. Matching <code className="text-fg-muted">.index</code> files
         are picked up automatically. Without a model the studio runs in pure DSP mode.
       </p>
 
@@ -234,8 +235,8 @@ export default function ModelManager({ activeModel = null, onActiveModelChange }
         onClick={() => fileInputRef.current?.click()}
         className={`relative mt-5 cursor-pointer rounded-md border border-dashed p-7 text-center transition-all duration-200 ${
           dragActive
-            ? 'border-white/40 bg-white/[0.05] drag-active'
-            : 'border-white/[0.12] bg-white/[0.02] hover:border-white/25 hover:bg-white/[0.04]'
+            ? 'border-line-hover bg-control-hover drag-active'
+            : 'border-line-strong bg-raised hover:border-line-hover hover:bg-control'
         } ${uploading ? 'pointer-events-none opacity-60' : ''}`}
       >
         <input
@@ -247,7 +248,7 @@ export default function ModelManager({ activeModel = null, onActiveModelChange }
           className="hidden"
         />
         <svg
-          className="mx-auto mb-3 h-9 w-9 text-zinc-500"
+          className="mx-auto mb-3 h-9 w-9 text-fg-subtle"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
@@ -259,27 +260,32 @@ export default function ModelManager({ activeModel = null, onActiveModelChange }
           <polyline points="17 8 12 3 7 8" />
           <line x1="12" y1="3" x2="12" y2="15" />
         </svg>
-        <p className="text-sm font-medium text-zinc-200">
+        <p className="text-sm font-medium text-fg-secondary">
           {dragActive ? 'Drop model files here' : 'Drop checkpoints or click to upload'}
         </p>
-        <p className="mt-1 text-xs uppercase tracking-[0.22em] text-zinc-600">
+        <p className="mt-1 text-xs uppercase tracking-[0.22em] text-fg-faint">
           .pth / .pt / .onnx + optional .index
         </p>
 
         {uploading && (
-          <div className="absolute inset-x-0 bottom-0 h-1 overflow-hidden rounded-b-[22px] bg-white/5">
-            <div
-              className="h-full bg-zinc-200 transition-all duration-300"
-              style={{ width: `${uploadProgress}%` }}
-            />
-          </div>
+          <>
+            <p className="mt-3 font-mono text-[11px] tabular-nums text-fg-muted">
+              {uploadProgress >= 99 ? 'Finalizing on the server…' : `Uploading… ${uploadProgress}%`}
+            </p>
+            <div className="absolute inset-x-0 bottom-0 h-1 overflow-hidden rounded-b-[22px] bg-meter-track">
+              <div
+                className="h-full bg-primary transition-all duration-150"
+                style={{ width: `${uploadProgress}%` }}
+              />
+            </div>
+          </>
         )}
       </div>
 
       {error && (
-        <div className="mt-4 flex items-start gap-2 rounded-md border border-rose-400/20 bg-rose-400/10 p-4">
+        <div className="mt-4 flex items-start gap-2 rounded-md border border-danger-line bg-danger-bg p-4">
           <svg
-            className="mt-0.5 h-4 w-4 flex-shrink-0 text-rose-300"
+            className="mt-0.5 h-4 w-4 flex-shrink-0 text-danger-fg"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
@@ -289,20 +295,20 @@ export default function ModelManager({ activeModel = null, onActiveModelChange }
             <line x1="15" y1="9" x2="9" y2="15" />
             <line x1="9" y1="9" x2="15" y2="15" />
           </svg>
-          <p className="text-sm text-rose-100">{error}</p>
+          <p className="text-sm text-danger-fg">{error}</p>
         </div>
       )}
 
       <div className="mt-5 space-y-3">
         {loading && models.length === 0 ? (
           <div className="flex items-center justify-center py-10">
-            <svg className="h-5 w-5 animate-spin text-zinc-500" viewBox="0 0 24 24" fill="none">
+            <svg className="h-5 w-5 animate-spin text-fg-subtle" viewBox="0 0 24 24" fill="none">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
             </svg>
           </div>
         ) : models.length === 0 ? (
-          <p className="rounded-md border border-white/[0.07] bg-black/20 px-4 py-8 text-center text-sm text-zinc-500">
+          <p className="rounded-md border border-line bg-raised px-4 py-8 text-center text-sm text-fg-subtle">
             No models yet — upload an RVC checkpoint, or just use the DSP studio.
           </p>
         ) : (
@@ -320,17 +326,17 @@ export default function ModelManager({ activeModel = null, onActiveModelChange }
                 key={name}
                 className={`rounded-md border px-4 py-4 transition ${
                   isActive
-                    ? 'border-emerald-300/30 bg-emerald-400/[0.04]'
-                    : 'border-white/[0.07] bg-black/20 hover:border-white/[0.15]'
+                    ? 'border-ok-line bg-ok-bg'
+                    : 'border-line bg-raised hover:border-line-hover'
                 }`}
               >
                 <div className="flex items-start justify-between gap-4">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       {isActive && (
-                        <div className="h-2 w-2 flex-shrink-0 rounded-full bg-emerald-400" />
+                        <div className="h-2 w-2 flex-shrink-0 rounded-full bg-ok-solid" />
                       )}
-                      <span className="truncate text-base font-medium text-zinc-100" title={name}>
+                      <span className="truncate text-base font-medium text-fg" title={name}>
                         {name}
                       </span>
                     </div>
@@ -354,7 +360,7 @@ export default function ModelManager({ activeModel = null, onActiveModelChange }
                         onClick={handleDeactivate}
                         disabled={isOperating}
                         title="Click to deactivate"
-                        className="rounded border border-emerald-300/40 bg-emerald-400/10 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-emerald-200 transition hover:bg-emerald-400/20 disabled:opacity-50"
+                        className="rounded border border-ok-line-strong bg-ok-bg-strong px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-ok-fg transition hover:bg-ok-bg-strong disabled:opacity-50"
                       >
                         {isOperating ? '…' : 'Active'}
                       </button>
@@ -362,7 +368,7 @@ export default function ModelManager({ activeModel = null, onActiveModelChange }
                       <button
                         onClick={() => handleActivate(name)}
                         disabled={isOperating}
-                        className="rounded border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs font-medium uppercase tracking-[0.12em] text-zinc-300 transition hover:border-white/25 hover:bg-white/[0.06] hover:text-zinc-100 disabled:opacity-50"
+                        className="rounded border border-line-strong bg-control px-3 py-1.5 text-xs font-medium uppercase tracking-[0.12em] text-fg-secondary transition hover:border-line-hover hover:bg-control-hover hover:text-fg disabled:opacity-50"
                       >
                         {isOperating ? 'Loading…' : 'Activate'}
                       </button>
@@ -373,8 +379,8 @@ export default function ModelManager({ activeModel = null, onActiveModelChange }
                       disabled={isOperating}
                       className={`rounded border px-3 py-1.5 text-xs font-medium uppercase tracking-[0.12em] transition disabled:opacity-50 ${
                         deleteConfirm === name
-                          ? 'border-rose-300/40 bg-rose-300/15 text-rose-100'
-                          : 'border-white/10 bg-white/[0.03] text-zinc-500 hover:border-rose-300/30 hover:bg-rose-300/10 hover:text-rose-100'
+                          ? 'border-danger-line-strong bg-danger-bg-strong text-danger-fg'
+                          : 'border-line-strong bg-control text-fg-subtle hover:border-danger-line hover:bg-danger-bg hover:text-danger-fg'
                       }`}
                     >
                       {deleteConfirm === name ? 'Confirm' : 'Delete'}

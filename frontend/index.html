@@ -1,11 +1,29 @@
 <!DOCTYPE html>
-<html lang="en" class="dark">
+<!-- The theme lives in data-theme (set below before first paint); a static
+     class="dark" here would claim dark even while the light theme is active. -->
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="Real-time voice changer powered by AI" />
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎙</text></svg>" />
     <title>OpenVoiceChanger</title>
+    <script>
+      // Applies the saved theme before first paint so a stored light theme
+      // never flashes dark on load. Mirrors normalizeTheme() in
+      // src/lib/theme.js — keep the two in sync. Anything missing or corrupt
+      // falls back to dark, which is the product default.
+      (function () {
+        var theme = 'dark';
+        try {
+          var saved = window.localStorage.getItem('ovc_theme');
+          if (saved === 'light' || saved === 'dark') theme = saved;
+        } catch (err) {
+          /* storage blocked — keep the default */
+        }
+        document.documentElement.setAttribute('data-theme', theme);
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

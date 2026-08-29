@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { getMediaDeviceSupport, supportsOutputDeviceSelection } from '../lib/audioSupport';
 
 export default function useAudioDevices() {
   const [inputDevices, setInputDevices] = useState([]);
@@ -8,9 +9,14 @@ export default function useAudioDevices() {
   const [permissionState, setPermissionState] = useState('prompt');
   const [error, setError] = useState(null);
 
+  // Probed once: whether this browser can capture at all, and whether it can
+  // route Web Audio output to a chosen device.
+  const support = useMemo(() => getMediaDeviceSupport(), []);
+  const outputSelectionSupported = useMemo(() => supportsOutputDeviceSelection(), []);
+
   const enumerate = useCallback(async () => {
     if (!navigator.mediaDevices?.enumerateDevices) {
-      setError('This browser does not support media device enumeration.');
+      setError(support.reason || 'This browser does not support media device enumeration.');
       setInputDevices([]);
       setOutputDevices([]);
       setHasLabels(false);
@@ -24,18 +30,21 @@ export default function useAudioDevices() {
       setInputDevices(inputs);
       setOutputDevices(outputs);
       setHasLabels([...inputs, ...outputs].some((d) => d.label));
-      setError(null);
+      // Devices may enumerate fine while capture itself is unavailable (an
+      // insecure origin exposing enumerateDevices but not getUserMedia), so
+      // the capture problem must survive a successful enumeration.
+      setError(support.supported ? null : support.reason);
     } catch (err) {
       setError(err.message || 'Failed to enumerate audio devices.');
       console.error('Failed to enumerate audio devices:', err);
     }
-  }, []);
+  }, [support.supported, support.reason]);
 
   // Full refresh: request mic permission to get labeled device names,
   // then enumerate. Only call this on user action (e.g. clicking Start).
   const refresh = useCallback(async () => {
-    if (!navigator.mediaDevices?.getUserMedia) {
-      setError('This browser does not support microphone access.');
+    if (!support.supported) {
+      setError(support.reason);
       return;
     }
 
@@ -63,7 +72,7 @@ export default function useAudioDevices() {
     } finally {
       setIsRefreshing(false);
     }
-  }, [enumerate]);
+  }, [enumerate, support.supported, support.reason]);
 
   // On mount: enumerate without requesting permission (labels may be empty,
   // but at least we know devices exist). Permission is requested later when
@@ -110,5 +119,8 @@ export default function useAudioDevices() {
     hasLabels,
     permissionState,
     error,
+    captureSupported: support.supported,
+    insecureContext: Boolean(support.insecureContext),
+    outputSelectionSupported,
   };
 }

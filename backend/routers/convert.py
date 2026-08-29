@@ -11,7 +11,7 @@ import numpy as np
 from fastapi import APIRouter, Form, HTTPException, Request, UploadFile
 from fastapi.responses import Response
 
-from backend.config import settings
+from backend.config import DEFAULT_F0_METHOD, settings
 from backend.services.dsp_effects import EffectsChain
 
 logger = logging.getLogger(__name__)
@@ -59,6 +59,10 @@ def _render(
     formant_shift: float,
     f0_method: str,
     effects: dict,
+    index_rate: float | None = None,
+    filter_radius: int | None = None,
+    rms_mix_rate: float | None = None,
+    protect: float | None = None,
 ) -> np.ndarray:
     chain = EffectsChain(sample_rate)
     processed = chain.pre_process(audio, effects)
@@ -73,6 +77,14 @@ def _render(
                     "pitch_shift": pitch_shift,
                     "f0_method": f0_method,
                     "sample_rate": sample_rate,
+                    "index_rate": index_rate,
+                    "filter_radius": filter_radius,
+                    "rms_mix_rate": rms_mix_rate,
+                    "protect": protect,
+                    # Whole-file render: the entire input must reach the model.
+                    # The realtime context window would clip it to a fraction
+                    # of a second and pad the rest with silence.
+                    "use_stream_context": False,
                 },
             )
             model_applied = True
@@ -91,9 +103,15 @@ async def convert_file(
     file: UploadFile,
     pitch_shift: float = Form(0.0),
     formant_shift: float = Form(0.0),
-    f0_method: str = Form("rmvpe"),
+    f0_method: str = Form(DEFAULT_F0_METHOD),
     effects: str = Form("{}"),
     use_model: bool = Form(True),
+    # RVC advanced controls. Omitted means "use the server default" — the
+    # processor resolves None against its configured values.
+    index_rate: float | None = Form(None),
+    filter_radius: int | None = Form(None),
+    rms_mix_rate: float | None = Form(None),
+    protect: float | None = Form(None),
 ) -> Response:
     """Convert an uploaded audio file and return the rendered WAV."""
     model_manager = getattr(request.app.state, "model_manager", None)
@@ -141,6 +159,10 @@ async def convert_file(
             float(np.clip(formant_shift, -24.0, 24.0)),
             str(f0_method),
             effects_dict,
+            index_rate,
+            filter_radius,
+            rms_mix_rate,
+            protect,
         )
         wav_bytes = await asyncio.to_thread(_encode_wav, rendered, sample_rate)
     except Exception as exc:

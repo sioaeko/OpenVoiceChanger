@@ -1,3 +1,4 @@
+import importlib
 import logging
 import os
 import threading
@@ -7,7 +8,7 @@ from typing import Any
 
 import numpy as np
 
-from backend.config import settings
+from backend.config import DEFAULT_F0_METHOD, settings
 from backend.services.audio_processor import resample as resample_audio
 
 logger = logging.getLogger(__name__)
@@ -17,6 +18,57 @@ RVC_INSTALL_HINT = (
     "`pip install --no-deps git+https://github.com/RVC-Project/"
     "Retrieval-based-Voice-Conversion`."
 )
+
+UNSAFE_CHECKPOINT_HINT = (
+    "This checkpoint cannot be loaded in PyTorch's safe (weights-only) mode, "
+    "which means unpickling it would run code embedded in the file. "
+    "Only .pth files from a source you trust should ever be loaded that way. "
+    "If you trust this one, restart the backend with "
+    "OVC_RVC_ALLOW_UNSAFE_CHECKPOINTS=true to permit it."
+)
+
+
+def _numpy_safe_globals() -> list:
+    """Data-only numpy symbols some RVC checkpoints need to unpickle.
+
+    These reconstruct arrays, scalars and dtypes; none of them can execute
+    caller-supplied code, so allowing them keeps weights-only loading safe
+    while covering checkpoints that stored numpy values alongside tensors.
+    """
+    candidates = [
+        ("numpy", "ndarray"),
+        ("numpy", "dtype"),
+        # numpy moved these to a private package in 2.0; try both spellings.
+        ("numpy.core.multiarray", "_reconstruct"),
+        ("numpy.core.multiarray", "scalar"),
+        ("numpy._core.multiarray", "_reconstruct"),
+        ("numpy._core.multiarray", "scalar"),
+    ]
+
+    resolved = []
+    for module_name, attr in candidates:
+        try:
+            module = importlib.import_module(module_name)
+            resolved.append(getattr(module, attr))
+        except (ImportError, AttributeError):
+            continue
+
+    # numpy >= 1.25 pickles a scalar's dtype as a concrete class from
+    # numpy.dtypes (Int64DType, Float32DType, ...) rather than numpy.dtype
+    # itself, so the base class alone is not enough to unpickle np.int64(40000).
+    try:
+        dtypes_module = importlib.import_module("numpy.dtypes")
+    except ImportError:
+        return resolved
+
+    for name in dir(dtypes_module):
+        if name.startswith("_") or not name.endswith("DType"):
+            continue
+        attr = getattr(dtypes_module, name, None)
+        if isinstance(attr, type):
+            resolved.append(attr)
+
+    return resolved
 
 
 @dataclass(slots=True)
@@ -163,6 +215,46 @@ class RvcProcessor:
             x_max=x_max,
         )
 
+    def _load_checkpoint(self, torch) -> dict:
+        """Load an RVC checkpoint, preferring PyTorch's safe weights-only mode.
+
+        A .pth checkpoint is a Python pickle, so the legacy
+        ``weights_only=False`` path executes whatever the file's author put in
+        it — for a model anyone can upload through the web UI, that is remote
+        code execution. Safe mode is tried first (extended with data-only numpy
+        symbols); falling back to unpickling requires the operator to opt in
+        per-deployment, and says loudly in the log when it happens.
+        """
+        path = str(self._model_path)
+
+        try:
+            safe_globals = getattr(torch.serialization, "safe_globals", None)
+            extra_globals = _numpy_safe_globals()
+            if safe_globals is not None and extra_globals:
+                with safe_globals(extra_globals):
+                    return torch.load(path, map_location="cpu", weights_only=True)
+            return torch.load(path, map_location="cpu", weights_only=True)
+        except Exception as safe_exc:
+            if not settings.RVC_ALLOW_UNSAFE_CHECKPOINTS:
+                logger.error(
+                    "Refusing to unpickle %s: safe load failed (%s)",
+                    self._model_path.name,
+                    safe_exc,
+                )
+                raise RuntimeError(
+                    f"{self._model_path.name} could not be loaded safely. "
+                    f"{UNSAFE_CHECKPOINT_HINT}"
+                ) from safe_exc
+
+            logger.warning(
+                "OVC_RVC_ALLOW_UNSAFE_CHECKPOINTS is set — unpickling %s with "
+                "weights_only=False. Code embedded in this file will run with the "
+                "backend's privileges. Safe load failed with: %s",
+                self._model_path.name,
+                safe_exc,
+            )
+            return torch.load(path, map_location="cpu", weights_only=False)
+
     def _load_model(self) -> None:
         try:
             import torch
@@ -170,9 +262,7 @@ class RvcProcessor:
             raise RuntimeError("PyTorch is required for RVC inference") from exc
 
         checkpoint_utils, pipeline_module, synthesizers = self._runtime_modules()
-        checkpoint = torch.load(
-            str(self._model_path), map_location="cpu", weights_only=False
-        )
+        checkpoint = self._load_checkpoint(torch)
 
         if not isinstance(checkpoint, dict) or "config" not in checkpoint or "weight" not in checkpoint:
             raise RuntimeError(
@@ -259,7 +349,7 @@ class RvcProcessor:
         return "harvest"
 
     def _normalize_f0_method(self, f0_method: str) -> str:
-        method = (f0_method or "pm").lower()
+        method = (f0_method or DEFAULT_F0_METHOD).lower()
         if method == "dio":
             logger.debug("RVC runtime does not provide dio; using pm instead")
             return "pm"
@@ -294,6 +384,12 @@ class RvcProcessor:
 
     @staticmethod
     def _tail_to_length(audio: np.ndarray, target_length: int) -> np.ndarray:
+        """Align a streaming chunk to the end of the window.
+
+        In streaming mode inference runs over a rolling context window whose
+        newest samples correspond to the chunk just received, so the useful
+        audio is at the *tail* and any shortfall is padded in front.
+        """
         if target_length <= 0:
             return np.zeros(0, dtype=np.float32)
         if len(audio) > target_length:
@@ -303,19 +399,55 @@ class RvcProcessor:
             return np.concatenate([pad, audio.astype(np.float32, copy=False)])
         return audio.astype(np.float32, copy=False)
 
+    @staticmethod
+    def _head_to_length(audio: np.ndarray, target_length: int) -> np.ndarray:
+        """Align a whole-file render to the start of the input.
+
+        Offline inference covers the entire file from sample zero, so the
+        rendered audio must stay anchored to the beginning. Length drift from
+        resampling is absorbed at the end — front-padding here would push the
+        whole recording later in time.
+        """
+        if target_length <= 0:
+            return np.zeros(0, dtype=np.float32)
+        if len(audio) > target_length:
+            return audio[:target_length].astype(np.float32, copy=False)
+        if len(audio) < target_length:
+            pad = np.zeros(target_length - len(audio), dtype=np.float32)
+            return np.concatenate([audio.astype(np.float32, copy=False), pad])
+        return audio.astype(np.float32, copy=False)
+
     def process(
         self,
         audio: np.ndarray,
         pitch_shift: float = 0.0,
-        f0_method: str = "pm",
+        f0_method: str = DEFAULT_F0_METHOD,
         sample_rate: int = 40000,
         stream_id: str | int | None = None,
         index_rate: float | None = None,
         filter_radius: int | None = None,
         rms_mix_rate: float | None = None,
         protect: float | None = None,
+        use_stream_context: bool = True,
     ) -> np.ndarray:
-        """Run real RVC inference on one streaming audio chunk."""
+        """Run real RVC inference over ``audio``.
+
+        Two distinct modes:
+
+        * ``use_stream_context=True`` (realtime): ``audio`` is one live chunk.
+          It is appended to this stream's rolling 16 kHz tail context, the
+          window is trimmed to ``RVC_STREAM_CONTEXT_SECONDS``, and inference
+          runs over that window. The result is tail-aligned to the chunk.
+        * ``use_stream_context=False`` (offline whole-file render): ``audio`` is
+          an entire file. It is resampled to 16 kHz and handed to the RVC
+          pipeline **in full** — the pipeline splits long input itself using
+          the x_pad/x_query/x_center/x_max budget from ``_select_runtime_config``.
+          No per-stream state is read or written, and the result is head-aligned
+          so the render starts where the source starts.
+
+        Passing a whole file through the streaming path would truncate it to the
+        context window, which is why the mode is explicit rather than inferred.
+        """
         if not self.loaded:
             raise RuntimeError("RVC model is not loaded")
         if audio.size == 0:
@@ -331,15 +463,17 @@ class RvcProcessor:
         resolved_protect = self._protect if protect is None else float(np.clip(protect, 0.0, 0.5))
 
         with self._lock:
-            state = self._get_stream_state(stream_key)
-
             chunk_16k = resample_audio(audio.astype(np.float32), sample_rate, 16000)
-            if self._context_samples_16k > 0:
+
+            if use_stream_context and self._context_samples_16k > 0:
+                state = self._get_stream_state(stream_key)
                 state.audio_16k = np.concatenate([state.audio_16k, chunk_16k]).astype(np.float32)
                 if len(state.audio_16k) > self._context_samples_16k:
                     state.audio_16k = state.audio_16k[-self._context_samples_16k :]
                 audio_for_inference = state.audio_16k
             else:
+                # Offline renders (and a zero-length context) infer over exactly
+                # what the caller supplied — for a file, that is all of it.
                 audio_for_inference = chunk_16k
 
             resample_sr = sample_rate if sample_rate >= 16000 else 0
@@ -378,7 +512,10 @@ class RvcProcessor:
             if resample_sr == 0 and self._target_sample_rate != sample_rate:
                 output = resample_audio(output, self._target_sample_rate, sample_rate)
 
-            output = self._tail_to_length(output, len(audio))
+            if use_stream_context:
+                output = self._tail_to_length(output, len(audio))
+            else:
+                output = self._head_to_length(output, len(audio))
             return np.clip(output, -1.0, 1.0).astype(np.float32, copy=False)
 
     def release_stream(self, stream_id: str | int | None) -> None:

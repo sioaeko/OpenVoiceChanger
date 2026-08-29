@@ -31,12 +31,12 @@
 - ONNX と RVC モデル対応 + **モデル不要の DSP モード**（チェックポイントなしでピッチシフトとエフェクトを使用可能）
 - リアルタイムのピッチ **とフォルマント** シフト、F0 方式選択（PM / Harvest / Crepe / RMVPE / FCPE）、RVC 詳細パラメータ（index rate、RMS mix、protect）
 - **サーバーサイド 12 種エフェクトラック**: ノイズゲート、ロボット、ウィスパー、電話、ディストーション、ビットクラッシュ、コーラス、エコー、リバーブ、トーン EQ、コンプレッサー、出力ゲイン
-- **内蔵ボイスプリセット 16 種**（チップマンク、ディープボイス、ロボット、ゴーストなど）+ ユーザープリセットの保存 / 削除
+- **内蔵ボイスプリセット 16 種**（チップマンク、ディープボイス、ロボット、ゴーストなど）+ Voice Lab の全状態を保存するユーザープリセット
 - リアルタイムスペクトラムビジュアライザー、ピークホールド付き VU メーター、レイテンシスパークライン、サーバー処理時間の内訳（モデル / DSP / ネットワーク）
 - **出力レコーダー** — 変換後の声を WAV でダウンロード
 
 ### オフライン変換
-- オーディオファイル（wav / mp3 / flac / ogg / m4a）をアップロードし、アクティブモデル + エフェクトチェーンでレンダリングして WAV をダウンロード
+- オーディオファイル（wav / mp3 / flac / ogg / m4a）をアップロードし、アクティブモデル + 現在の Voice Lab 設定 + エフェクトチェーンでレンダリングして WAV をダウンロード
 
 ### 管理
 - ドラッグ & ドロップのモデルアップロード（`.pth` / `.pt` / `.onnx` + 付随する `.index`）、同時にアクティブなモデルは 1 つ
@@ -57,6 +57,7 @@
 ![ボイスプリセットと DSP エフェクトラック](docs/images/effects-rack.png)
 
 ワンクリックのボイスプリセット 16 種とサーバーサイド 12 種の DSP チェーン。
+ユーザープリセットは F0、retrieval、filter、RMS、protect の設定も保存します。
 モデルなしでもすべて動作し、エフェクトはライブストリームに即時反映されます。
 
 ### モデル
@@ -71,6 +72,8 @@ RVC / ONNX チェックポイントと付随する `.index` ファイルのド�
 ![オフラインファイル変換](docs/images/converter.png)
 
 オーディオファイル全体をアクティブモデル + エフェクトチェーンでレンダリングし、WAV としてダウンロードします。
+RVC 変換はリアルタイムストリームの短いコンテキスト窓を使わずファイル全体を処理し、
+現在の Index Rate、Filter Radius、RMS Mix、Protect も反映します。
 
 ### 設定
 
@@ -205,8 +208,25 @@ npm run dev
 3. バイナリオーディオフレームを送信: `[uint32 seq_num][uint32 reserved][float32[] PCM samples]`
 4. 同じ形式で処理済みオーディオフレームを受信 — レスポンスの `reserved` フィールドにサーバー処理時間（1/100 ms 単位）が入ります
 5. 必要に応じて設定を送信:
-   `{"pitch_shift": 3.0, "formant_shift": -2.0, "f0_method": "rmvpe", "effects": {"reverb": {"enabled": true, "size": 0.6, "mix": 0.4}}}`
-6. 定期的なステータス JSON を受信: `{"type": "status", "latency_ms": …, "model_ms": …, "dsp_ms": …, "mode": "rvc|onnx|dsp", "effects_active": …}`
+   `{"pitch_shift": 3.0, "formant_shift": -2.0, "f0_method": "rmvpe", "filter_radius": 3, "effects": {"reverb": {"enabled": true, "size": 0.6, "mix": 0.4}}}`
+6. 定期的なステータス JSON を受信: `{"type": "status", "latency_ms": …, "model_ms": …, "dsp_ms": …, "mode": "rvc|onnx|dsp|bypass", "bypass": false, "effects_active": …}`
+
+設定フィールドはすべて任意で、未知のフィールドは無視されるため、本リリースの
+前後どちらのクライアント／サーバーとも相互運用できます。
+
+初期 config で送るサンプルレートは、要求値ではなく `AudioContext` が**実際に**
+動作しているレート (`audioContext.sampleRate`) を送ってください。ブラウザは
+要求を無視することがあり、サーバーはここで報告された値で処理・リサンプルします。
+
+#### 変換バイパス (A/B)
+
+`{"bypass": true}` は入力信号をそのまま返します。ノイズゲート、モデル、ピッチ・
+フォルマントシフト、エフェクトラックのすべてを通しません。マイク・WebSocket・
+出力ルーティングは動作したままなので、停止ではなく変換後の音との真の A/B 比較に
+なります。UI では <kbd>B</kbd> キーで切り替えられます。
+
+これはエフェクトラックの **Bypass all** ボタンとは別物です。後者はエフェクトを
+解除するだけで、モデル変換は動作し続けます。
 
 ## 設定
 
@@ -215,21 +235,94 @@ npm run dev
 | 変数 | デフォルト | 説明 |
 |------|------------|------|
 | `OVC_MODELS_DIR` | `models` | モデルディレクトリ |
-| `OVC_HOST` | `0.0.0.0` | バックエンド bind アドレス |
+| `OVC_HOST` | `127.0.0.1` | バックエンド bind アドレス — 既定はループバックのみ |
 | `OVC_PORT` | `8000` | バックエンドポート |
-| `OVC_SAMPLE_RATE` | `40000` | 既定のサンプルレート |
+| `OVC_SAMPLE_RATE` | `40000` | クライアントに提案するサンプルレート（実際のレートはブラウザが報告） |
 | `OVC_CHUNK_SIZE` | `4096` | 既定のチャンクサイズ |
-| `OVC_CORS_ORIGINS` | `["*"]` | 許可する CORS origin |
+| `OVC_CORS_ORIGINS` | `["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:8000", "http://127.0.0.1:8000"]` | HTTP と音声 WebSocket の両方に適用される origin 許可リスト |
+| `OVC_ALLOW_ANY_ORIGIN` | `false` | origin 検証を完全に無効化（信頼できるネットワークのみ） |
 | `OVC_LOG_LEVEL` | `info` | ログレベル |
 | `OVC_HUBERT_PATH` | `models/assets/hubert_base.pt` | RVC 用 HuBERT パス |
 | `OVC_RMVPE_ROOT` | `models/assets/rmvpe` | 任意の RMVPE 資産ディレクトリ |
-| `OVC_RVC_STREAM_CONTEXT_SECONDS` | `1.0` | ストリームごとの RVC コンテキスト長 |
+| `OVC_RVC_STREAM_CONTEXT_SECONDS` | `0.14` | 各ストリームが推論をやり直す 16 kHz 履歴の長さ |
 | `OVC_RVC_INDEX_RATE` | `0.75` | `.index` がある場合の retrieval mix |
-| `OVC_RVC_FILTER_RADIUS` | `3` | Harvest median filter 半径 |
+| `OVC_RVC_FILTER_RADIUS` | `3` | Harvest median filter 半径（3 未満で無効） |
 | `OVC_RVC_RMS_MIX_RATE` | `0.25` | RMS envelope blend |
+| `OVC_RVC_ALLOW_UNSAFE_CHECKPOINTS` | `false` | 安全な読み込みに失敗したチェックポイントの unpickle を許可（[セキュリティ](#セキュリティ)参照） |
 | `OVC_PRESETS_PATH` | `data/presets.json` | ユーザープリセット保存ファイル |
 | `OVC_MAX_CONVERT_SECONDS` | `600` | オフライン変換の最大オーディオ長 |
 | `OVC_RVC_PROTECT` | `0.33` | 子音保護値 |
+
+`OVC_RVC_STREAM_CONTEXT_SECONDS` はバッファサイズではなくレイテンシと品質の
+トレードオフです。各チャンクはこのウィンドウ全体に対して推論されるため、値を
+大きくすると連続性は向上しますが、チャンクごとの推論コストが倍増します。
+既定の 4096 サンプルチャンクでは `0.14` がリアルタイムの余裕を保ちます。
+
+## セキュリティ
+
+このスタジオはモデルチェックポイントをアップロードして実行し、マイクを開くため、
+既定値はシングルユーザーのマシンを前提としています。
+
+### ネットワークアクセス
+
+- **bind アドレス**: `OVC_HOST` の既定は `127.0.0.1` です。変更しない限り、
+  マシン外から API に到達できません。
+- **origin**: クロスオリジンの HTTP リクエストと WebSocket ハンドシェイクは
+  `OVC_CORS_ORIGINS` で検証されます。`Origin` ヘッダーを持たないリクエスト
+  （curl、ネイティブクライアント、テスト）は許可され、不透明な `null` origin は
+  拒否されます。
+- **same-origin は常に許可**: このバックエンドが配信したページはどのアドレスでも
+  検証を通過するため、フロントエンドを LAN ホストに移しても許可リストの変更は
+  不要です。悪意ある第三者のページはブラウザが自身の origin を送るため通過できません。
+
+ブラウザは WebSocket に same-origin ポリシーを適用しないため、この検証がないと
+訪問した任意のサイトがこのバックエンド経由でマイクストリームを開けてしまいます。
+
+LAN 上の別デバイスから使う場合:
+
+```bash
+OVC_HOST=0.0.0.0 python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000
+```
+
+同じバックエンドからビルド済みフロントエンドを配信する場合、追加設定は不要です。
+Vite 開発サーバーを別ホストで動かす場合のみ、その origin を追加してください:
+
+```bash
+export OVC_CORS_ORIGINS='["http://192.168.1.50:5173"]'
+```
+
+なおブラウザはセキュアな origin でのみマイク取得を許可します。平文 HTTP では
+`localhost` 以外で `getUserMedia` が利用できません。LAN 配置には HTTPS を使うか、
+ホストマシン上で使用してください。
+
+### モデルチェックポイント
+
+RVC の `.pth` は Python の pickle であり、PyTorch の従来の `weights_only=False`
+で読み込むとファイル作成者の任意コードが実行されます。チェックポイントは Web の
+アップロードエンドポイント経由で届くため、バックエンドは PyTorch の安全な
+weights-only モードで読み込みます（numpy 値を保存したチェックポイントも読める
+よう、データ専用の numpy シンボルを追加しています）。
+
+その方法で読み込めないチェックポイントは、黙って unpickle せずに説明付きの
+エラーで有効化が失敗します。信頼できるファイルに限り、デプロイごとに明示的に
+オプトインしてください:
+
+```bash
+OVC_RVC_ALLOW_UNSAFE_CHECKPOINTS=true python -m uvicorn backend.main:app
+```
+
+このパスを通るたびに、バックエンドはファイル名を含む警告をログに出力します。
+
+## テスト
+
+```bash
+pip install -r backend/requirements-test.txt
+python -m pytest          # バックエンド
+
+cd frontend && npm install
+npm test                  # フロントエンド
+npm run build
+```
 
 ## プロジェクト構成
 

@@ -1,16 +1,44 @@
 import React, { useEffect, useRef } from 'react';
+import { readThemeColors } from '../lib/theme';
+
+// Canvas cannot use var(), so the spectrum needs concrete colour strings.
+const CANVAS_COLORS = {
+  input: '--viz-input',
+  output: '--viz-output',
+  idle: '--viz-idle',
+};
+
+// Fallbacks for the first frame, before the theme resolve has run.
+const FALLBACK_COLORS = {
+  input: 'rgba(148, 163, 184, 0.16)',
+  output: 'rgba(52, 211, 153, 0.82)',
+  idle: 'rgba(255, 255, 255, 0.07)',
+};
 
 // Real-time canvas visualizer: flat single-color output spectrum with the
 // input spectrum as a dim layer behind it, plus a quiet idle animation.
-export default function Visualizer({ getAnalysers, isRunning }) {
+export default function Visualizer({ getAnalysers, isRunning, theme }) {
   const canvasRef = useRef(null);
   const animRef = useRef(null);
   const idlePhaseRef = useRef(0);
   const isRunningRef = useRef(isRunning);
+  const colorsRef = useRef(FALLBACK_COLORS);
 
   useEffect(() => {
     isRunningRef.current = isRunning;
   }, [isRunning]);
+
+  // Resolved once per theme change and cached in a ref. The draw loop runs at
+  // 60fps, so it must never call getComputedStyle itself — that would force a
+  // style recalc on every frame.
+  useEffect(() => {
+    const resolved = readThemeColors(CANVAS_COLORS, document.documentElement);
+    colorsRef.current = {
+      input: resolved.input || FALLBACK_COLORS.input,
+      output: resolved.output || FALLBACK_COLORS.output,
+      idle: resolved.idle || FALLBACK_COLORS.idle,
+    };
+  }, [theme]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -38,6 +66,7 @@ export default function Visualizer({ getAnalysers, isRunning }) {
       ctx.clearRect(0, 0, width, height);
 
       const { input, output } = getAnalysers?.() || {};
+      const colors = colorsRef.current;
       const running = isRunningRef.current && (input || output);
 
       const barCount = Math.max(24, Math.min(96, Math.floor(width / 12)));
@@ -62,14 +91,14 @@ export default function Visualizer({ getAnalysers, isRunning }) {
           if (input) {
             const vIn = inputData[bin] / 255;
             const hIn = Math.max(1, vIn * height * 0.92);
-            ctx.fillStyle = 'rgba(148, 163, 184, 0.16)';
+            ctx.fillStyle = colors.input;
             ctx.fillRect(x, height - hIn, barWidth, hIn);
           }
 
           if (output) {
             const vOut = outputData[bin] / 255;
             const hOut = Math.max(1, vOut * height * 0.92);
-            ctx.fillStyle = 'rgba(52, 211, 153, 0.82)';
+            ctx.fillStyle = colors.output;
             ctx.fillRect(x, height - hOut, barWidth, hOut);
           }
         }
@@ -85,7 +114,7 @@ export default function Visualizer({ getAnalysers, isRunning }) {
             0.03 * Math.sin(t * 13 - phase * 1.4);
           const h = Math.max(1, Math.abs(wave) * height);
           const x = i * (barWidth + gap);
-          ctx.fillStyle = 'rgba(255, 255, 255, 0.07)';
+          ctx.fillStyle = colors.idle;
           ctx.fillRect(x, height - h, barWidth, h);
         }
       }
@@ -107,20 +136,20 @@ export default function Visualizer({ getAnalysers, isRunning }) {
           <p className="panel-kicker">Spectrum</p>
           <h2 className="panel-title">Live signal</h2>
         </div>
-        <div className="flex items-center gap-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+        <div className="flex items-center gap-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-fg-subtle">
           <span className="flex items-center gap-1.5">
-            <span className="inline-block h-2 w-2 bg-zinc-500/50" />
+            <span className="inline-block h-2 w-2 bg-fg-faint" />
             Input
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="inline-block h-2 w-2 bg-emerald-400/80" />
+            <span className="inline-block h-2 w-2 bg-ok-solid" />
             Output
           </span>
         </div>
       </div>
       <canvas ref={canvasRef} className="mt-4 h-44 w-full sm:h-52" />
       {!isRunning && (
-        <p className="pointer-events-none absolute inset-x-0 bottom-[38%] text-center text-xs font-medium uppercase tracking-[0.2em] text-zinc-600">
+        <p className="pointer-events-none absolute inset-x-0 bottom-[38%] text-center text-xs font-medium uppercase tracking-[0.2em] text-fg-faint">
           Start routing to see the live spectrum
         </p>
       )}

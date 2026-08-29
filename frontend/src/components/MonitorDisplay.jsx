@@ -1,42 +1,81 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
+import { levelToPercent, nextPeak } from '../lib/meters';
 
-function VuMeter({ label, level }) {
-  const percent = Math.min(Math.max(level * 100 * 3, 0), 100);
-  const [peak, setPeak] = useState(0);
-  const peakRef = useRef(0);
+// Solid zone coloring, VU convention: green / yellow / red. Listed as literal
+// class names so Tailwind keeps them in the bundle.
+const ZONE_CLASSES = ['bg-ok-solid', 'bg-warn-solid', 'bg-danger-solid'];
+
+function zoneClass(percent) {
+  if (percent > 82) return 'bg-danger-solid';
+  if (percent > 60) return 'bg-warn-solid';
+  return 'bg-ok-solid';
+}
+
+/**
+ * A meter driven straight from the pipeline's meter store.
+ *
+ * Levels change ~60x per second. Routing them through React state would
+ * re-render the whole App on every animation frame, so the bar, the peak-hold
+ * marker and the readout are written to the DOM directly instead. The visual
+ * behaviour — 3x gain, zone colours, slow peak decay — is unchanged.
+ */
+function VuMeter({ label, meters, channel }) {
+  const barRef = useRef(null);
+  const peakRef = useRef(null);
+  const readoutRef = useRef(null);
+  const peakValueRef = useRef(0);
 
   useEffect(() => {
-    // Peak hold with slow decay.
-    peakRef.current = Math.max(peakRef.current * 0.96, percent);
-    setPeak(peakRef.current);
-  }, [percent]);
+    if (!meters?.subscribe) return undefined;
 
-  // Solid zone coloring, VU convention: green / yellow / red.
-  const barColor = useMemo(() => {
-    if (percent > 82) return 'bg-rose-400';
-    if (percent > 60) return 'bg-amber-300';
-    return 'bg-emerald-400';
-  }, [percent]);
+    return meters.subscribe((value) => {
+      const level = value?.[channel] ?? 0;
+      const percent = levelToPercent(level);
+      peakValueRef.current = nextPeak(peakValueRef.current, percent);
+
+      const bar = barRef.current;
+      if (bar) {
+        bar.style.width = `${percent}%`;
+        const nextClass = zoneClass(percent);
+        for (const cls of ZONE_CLASSES) {
+          bar.classList.toggle(cls, cls === nextClass);
+        }
+      }
+
+      const peak = peakRef.current;
+      if (peak) {
+        const visible = peakValueRef.current > 2;
+        peak.style.opacity = visible ? '1' : '0';
+        if (visible) peak.style.left = `calc(${peakValueRef.current}% - 1px)`;
+      }
+
+      const readout = readoutRef.current;
+      if (readout) readout.textContent = `${(level * 100).toFixed(1)}%`;
+    });
+  }, [meters, channel]);
 
   return (
     <div className="space-y-1.5">
       <div className="flex items-center justify-between">
-        <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-500">{label}</span>
-        <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-zinc-600">
-          {(level * 100).toFixed(1)}%
+        <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-fg-subtle">{label}</span>
+        <span
+          ref={readoutRef}
+          className="font-mono text-[10px] uppercase tracking-[0.1em] text-fg-faint"
+        >
+          0.0%
         </span>
       </div>
-      <div className="relative h-2 bg-white/[0.06]">
+      <div className="relative h-2 bg-meter-track">
         <div
-          className={`h-full ${barColor} transition-all duration-75 ease-out`}
-          style={{ width: `${percent}%` }}
+          ref={barRef}
+          className="h-full bg-ok-solid transition-all duration-75 ease-out"
+          style={{ width: '0%' }}
         />
-        {peak > 2 && (
-          <div
-            className="absolute top-0 h-full w-[2px] bg-white/70"
-            style={{ left: `calc(${peak}% - 1px)` }}
-          />
-        )}
+        <div
+          ref={peakRef}
+          className="absolute top-0 h-full w-[2px] bg-meter-peak"
+          style={{ left: '-1px', opacity: 0 }}
+        />
       </div>
     </div>
   );
@@ -61,39 +100,39 @@ function Sparkline({ history }) {
   }
 
   return (
-    <svg viewBox="0 0 100 28" preserveAspectRatio="none" className="h-[28px] w-full">
-      <path d={path} fill="none" stroke="rgba(161,161,170,0.8)" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+    <svg viewBox="0 0 100 28" preserveAspectRatio="none" className="h-[28px] w-full text-spark">
+      <path d={path} fill="none" stroke="currentColor" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
     </svg>
   );
 }
 
 function StatChip({ label, value }) {
   return (
-    <div className="rounded border border-white/[0.08] bg-black/25 px-3 py-2 text-center">
-      <p className="text-[9px] font-semibold uppercase tracking-[0.14em] text-zinc-500">{label}</p>
-      <p className="mt-1 font-mono text-sm font-semibold tabular-nums text-zinc-200">{value}</p>
+    <div className="rounded border border-line bg-input px-3 py-2 text-center">
+      <p className="text-[9px] font-semibold uppercase tracking-[0.14em] text-fg-subtle">{label}</p>
+      <p className="mt-1 font-mono text-sm font-semibold tabular-nums text-fg-secondary">{value}</p>
     </div>
   );
 }
 
 export default function MonitorDisplay({
-  inputLevel,
-  outputLevel,
+  meters,
   latency,
   latencyHistory,
   serverMs,
   serverStats,
+  bypass = false,
 }) {
   const latencyMs = Math.round(latency);
   const networkMs = Math.max(0, Math.round(latency - (serverMs || 0)));
   const latencyColor =
     latencyMs <= 0
-      ? 'text-zinc-500'
+      ? 'text-fg-subtle'
       : latencyMs < 60
-        ? 'text-emerald-300'
+        ? 'text-ok-fg'
         : latencyMs < 150
-          ? 'text-amber-200'
-          : 'text-rose-300';
+          ? 'text-warn-fg'
+          : 'text-danger-fg';
 
   return (
     <section className="panel p-5">
@@ -102,27 +141,31 @@ export default function MonitorDisplay({
           <p className="panel-kicker">Monitor</p>
           <h2 className="panel-title">Levels & latency</h2>
         </div>
-        {serverStats?.effectsActive > 0 && (
-          <span className="rounded border border-white/10 bg-white/[0.04] px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-300">
+        {bypass ? (
+          <span className="rounded border border-warn-line-strong bg-warn-bg px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-warn-fg">
+            Bypassed
+          </span>
+        ) : serverStats?.effectsActive > 0 ? (
+          <span className="rounded border border-line-strong bg-control px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-fg-secondary">
             {serverStats.effectsActive} FX
           </span>
-        )}
+        ) : null}
       </div>
 
       <div className="mt-5 space-y-3.5">
-        <VuMeter label="Input" level={inputLevel} />
-        <VuMeter label="Output" level={outputLevel} />
+        <VuMeter label="Input" meters={meters} channel="input" />
+        <VuMeter label="Output" meters={meters} channel="output" />
       </div>
 
-      <div className="mt-5 rounded border border-white/[0.08] bg-black/25 p-4">
+      <div className="mt-5 rounded border border-line bg-input p-4">
         <div className="flex items-end justify-between gap-3">
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-500">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-fg-subtle">
               Round trip
             </p>
-            <p className={`mt-1 font-mono text-3xl font-semibold tabular-nums tracking-[-0.04em] ${latencyColor}`}>
+            <p className={`mt-1 font-mono text-3xl font-semibold tabular-nums tracking-normal ${latencyColor}`}>
               {latencyMs > 0 ? `${latencyMs}` : '--'}
-              <span className="ml-1 text-sm text-zinc-500">ms</span>
+              <span className="ml-1 text-sm text-fg-subtle">ms</span>
             </p>
           </div>
           <div className="w-28 flex-shrink-0 sm:w-36">

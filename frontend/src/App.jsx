@@ -15,8 +15,16 @@ import useWebSocket from './hooks/useWebSocket';
 import useAudioPipeline from './hooks/useAudioPipeline';
 import useAudioDevices from './hooks/useAudioDevices';
 import { getActiveModel, fetchConfig } from './lib/api';
-import { applyConfig } from './lib/constants';
+import { applyConfig, DEFAULT_F0_METHOD } from './lib/constants';
 import { defaultEffects, effectsFromPreset } from './lib/effects';
+import {
+  effectsFromPresetSettings,
+  presetSettingsFromVoice,
+  voiceFromPreset,
+} from './lib/presets';
+import { buildTabUrl, readTabFromSearch } from './lib/navigation';
+import { shouldTriggerShortcut } from './lib/shortcuts';
+import { applyTheme, readAppliedTheme, storeTheme } from './lib/theme';
 
 const GLOBAL_SETTINGS_STORAGE_KEY = 'ovc_global_settings';
 const VOICE_STORAGE_KEY = 'ovc_voice_v2';
@@ -25,8 +33,10 @@ const EFFECTS_STORAGE_KEY = 'ovc_effects_v2';
 const DEFAULT_VOICE = {
   pitch: 0,
   formant: 0,
-  f0Method: 'pm',
+  f0Method: DEFAULT_F0_METHOD,
   indexRate: 0.75,
+  // Matches backend OVC_RVC_FILTER_RADIUS.
+  filterRadius: 3,
   rmsMixRate: 0.25,
   protect: 0.33,
 };
@@ -128,10 +138,7 @@ export default function App() {
   const devices = useAudioDevices();
 
   // Deep links: ?tab=models|converter selects a tab, ?settings opens the modal.
-  const [tab, setTab] = useState(() => {
-    const param = new URLSearchParams(window.location.search).get('tab');
-    return ['studio', 'models', 'converter'].includes(param) ? param : 'studio';
-  });
+  const [tab, setTab] = useState(() => readTabFromSearch(window.location.search));
   const [activeModel, setActiveModel] = useState(null);
   const [runtimeConfig, setRuntimeConfig] = useState(DEFAULT_RUNTIME_CONFIG);
   const [isSettingsOpen, setIsSettingsOpen] = useState(
@@ -141,6 +148,12 @@ export default function App() {
   const [effects, setEffects] = useState(loadInitialEffects);
   const [activePresetId, setActivePresetId] = useState(null);
   const [latencyHistory, setLatencyHistory] = useState([]);
+  // Full conversion bypass. Deliberately not persisted: a monitoring toggle
+  // should never be silently still on the next time the studio opens.
+  const [bypass, setBypass] = useState(false);
+  // Seeded from the attribute the blocking script in index.html already set,
+  // so React adopts the pre-paint theme instead of deciding it a second time.
+  const [theme, setTheme] = useState(() => readAppliedTheme(document.documentElement));
 
   const {
     status: wsStatus,
@@ -162,9 +175,11 @@ export default function App() {
     formant_shift: voice.formant,
     f0_method: voice.f0Method,
     index_rate: voice.indexRate,
+    filter_radius: voice.filterRadius,
     rms_mix_rate: voice.rmsMixRate,
     protect: voice.protect,
     effects,
+    bypass,
   };
 
   const settingsDebounceRef = useRef(null);
@@ -181,6 +196,13 @@ export default function App() {
       if (settingsDebounceRef.current) clearTimeout(settingsDebounceRef.current);
     };
   }, [voice, effects, wsStatus, sendSettings]);
+
+  // Bypass is a monitoring action, not a parameter tweak: send it immediately
+  // rather than through the 140 ms settings debounce, so A/B feels instant.
+  useEffect(() => {
+    if (wsStatus !== 'connected') return;
+    sendSettings({ bypass });
+  }, [bypass, wsStatus, sendSettings]);
 
   // Push the full current settings as soon as a connection opens.
   useEffect(() => {
@@ -215,6 +237,35 @@ export default function App() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Tab selection is reflected in ?tab= so the current view can be linked and
+  // Back/Forward moves between tabs instead of leaving the app.
+  // Note: pushState stays outside the state updater — StrictMode invokes
+  // updaters twice in development, which would push two history entries.
+  const handleTabChange = useCallback((nextTab) => {
+    if (nextTab === tab) return;
+    window.history.pushState({ tab: nextTab }, '', buildTabUrl(window.location.href, nextTab));
+    setTab(nextTab);
+  }, [tab]);
+
+  useEffect(() => {
+    const handlePopState = () => setTab(readTabFromSearch(window.location.search));
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  // "B" toggles the A/B bypass, except while typing into a field.
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (isSettingsOpen) return;
+      if (!shouldTriggerShortcut(event, 'b')) return;
+      event.preventDefault();
+      setBypass((prev) => !prev);
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isSettingsOpen]);
 
   // SPA-safe anchor scrolling (e.g. /#effects) once the page has rendered.
   useEffect(() => {
@@ -267,6 +318,15 @@ export default function App() {
 
   // --- Handlers --------------------------------------------------------------
 
+  // Theme is pure presentation: it only writes an attribute and a storage key,
+  // and never touches the audio pipeline or the WebSocket, so switching it
+  // mid-stream cannot interrupt playback.
+  const handleThemeChange = useCallback((nextTheme) => {
+    const applied = applyTheme(nextTheme, document.documentElement);
+    storeTheme(applied, window.localStorage);
+    setTheme(applied);
+  }, []);
+
   const handleVoiceChange = useCallback((partial) => {
     setActivePresetId(null);
     setVoice((prev) => ({ ...prev, ...partial }));
@@ -278,21 +338,17 @@ export default function App() {
   }, []);
 
   const applyPreset = useCallback((preset) => {
-    const settings = preset?.settings || {};
-    setVoice((prev) => ({
-      ...prev,
-      pitch: Number(settings.pitch_shift ?? 0),
-      formant: Number(settings.formant_shift ?? 0),
-    }));
-    setEffects(effectsFromPreset(settings.effects));
+    // Advanced RVC values are only overwritten when the preset carries them,
+    // so built-ins and pre-existing presets leave the current tuning intact.
+    setVoice((prev) => voiceFromPreset(preset, prev));
+    setEffects(effectsFromPresetSettings(preset));
     setActivePresetId(preset.id);
   }, []);
 
-  const getCurrentSettings = useCallback(() => ({
-    pitch_shift: voice.pitch,
-    formant_shift: voice.formant,
-    effects,
-  }), [voice, effects]);
+  const getCurrentSettings = useCallback(
+    () => presetSettingsFromVoice(voice, effects),
+    [voice, effects]
+  );
 
   const handleGlobalSettingsChange = useCallback(
     (partialConfig) => {
@@ -349,7 +405,9 @@ export default function App() {
   const headerActions = (
     <button
       onClick={() => setIsSettingsOpen(true)}
-      className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-white/[0.08] bg-white/[0.03] text-zinc-400 transition hover:border-white/25 hover:bg-white/[0.06] hover:text-zinc-200"
+      /* frost-control owns the surface, border, radius, transition and focus
+         ring — the previous bg/border utilities would have overridden it. */
+      className="frost-control inline-flex h-8 w-8 items-center justify-center text-fg-muted hover:text-fg-secondary"
       title="Session settings"
       aria-label="Open settings"
     >
@@ -370,32 +428,45 @@ export default function App() {
   return (
     <Layout
       tab={tab}
-      onTabChange={setTab}
-      statusSlot={<StatusIndicator wsStatus={wsStatus} activeModel={activeModel} mode={serverStats.mode} />}
+      onTabChange={handleTabChange}
+      statusSlot={(
+        <StatusIndicator
+          wsStatus={wsStatus}
+          activeModel={activeModel}
+          mode={serverStats.mode}
+          bypass={bypass}
+        />
+      )}
       headerActions={headerActions}
     >
       {tab === 'studio' && (
         <div className="space-y-5 animate-fade-in-up">
           <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
             <div className="space-y-5">
-              <Visualizer getAnalysers={pipeline.getAnalysers} isRunning={pipeline.isRunning} />
+              <Visualizer
+                getAnalysers={pipeline.getAnalysers}
+                isRunning={pipeline.isRunning}
+                theme={theme}
+              />
               <AudioControls
                 devices={devices}
                 pipeline={pipeline}
                 wsStatus={wsStatus}
                 activeModel={activeModel}
+                bypass={bypass}
+                onBypassChange={setBypass}
               />
               <Recorder pipeline={pipeline} />
             </div>
 
             <div className="space-y-5">
               <MonitorDisplay
-                inputLevel={pipeline.inputLevel}
-                outputLevel={pipeline.outputLevel}
+                meters={pipeline.meters}
                 latency={latency}
                 latencyHistory={latencyHistory}
                 serverMs={serverMs}
                 serverStats={serverStats}
+                bypass={bypass}
               />
               <VoiceLab
                 voice={voice}
@@ -439,7 +510,7 @@ export default function App() {
       {isSettingsOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6 sm:px-6">
           <button
-            className="absolute inset-0 bg-black/72 backdrop-blur-md"
+            className="absolute inset-0 bg-scrim backdrop-blur-md"
             onClick={() => setIsSettingsOpen(false)}
             aria-label="Close settings modal"
           />
@@ -449,6 +520,8 @@ export default function App() {
               onChange={handleGlobalSettingsChange}
               disabled={pipeline.isRunning}
               onClose={() => setIsSettingsOpen(false)}
+              theme={theme}
+              onThemeChange={handleThemeChange}
             />
           </div>
         </div>

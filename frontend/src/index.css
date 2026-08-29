@@ -3,8 +3,197 @@
 @tailwind utilities;
 
 @layer base {
+  /*
+   * Dark is the product default and therefore the base definition: a document
+   * with no data-theme (or an unrecognised one) renders dark. The light theme
+   * only overrides values — it never introduces a token of its own, so a
+   * missing light value can never fall through to nothing.
+   */
   :root {
     color-scheme: dark;
+
+    /* Surfaces */
+    --surface-base: #0a0a0c;
+    --surface-panel: #101013;
+    --surface-raised: rgba(0, 0, 0, 0.2);
+    --surface-sunken: rgba(0, 0, 0, 0.3);
+    --surface-input: rgba(0, 0, 0, 0.25);
+    --surface-overlay: rgba(18, 16, 28, 0.95);
+    --surface-header: rgba(10, 10, 12, 0.95);
+    --scrim: rgba(0, 0, 0, 0.72);
+    --overlay-shadow: rgba(0, 0, 0, 0.55);
+
+    /* Interactive control fills */
+    --control-bg: rgba(255, 255, 255, 0.035);
+    --control-bg-hover: rgba(255, 255, 255, 0.065);
+
+    /* Text */
+    --text-primary: #f4f4f5;
+    --text-secondary: #d4d4d8;
+    --text-muted: #a1a1aa;
+    --text-subtle: #71717a;
+    --text-faint: #52525b;
+
+    /* Primary action — highest-contrast surface in the theme */
+    --primary-bg: #f4f4f5;
+    --primary-bg-hover: #ffffff;
+    --primary-fg: #18181b;
+
+    /* Borders */
+    --border-subtle: rgba(255, 255, 255, 0.08);
+    --border-default: rgba(255, 255, 255, 0.1);
+    --border-hover: rgba(255, 255, 255, 0.25);
+
+    /* Status — success */
+    --ok-fg: #a7f3d0;
+    --ok-fg-soft: rgba(167, 243, 208, 0.6);
+    --ok-bg: rgba(52, 211, 153, 0.07);
+    --ok-bg-strong: rgba(52, 211, 153, 0.18);
+    --ok-line: rgba(110, 231, 183, 0.3);
+    --ok-line-strong: rgba(110, 231, 183, 0.5);
+    --ok-solid: #34d399;
+
+    /* Status — warning / bypass */
+    --warn-fg: #fde68a;
+    --warn-fg-soft: rgba(253, 230, 138, 0.75);
+    --warn-bg: rgba(251, 191, 36, 0.1);
+    --warn-bg-strong: rgba(251, 191, 36, 0.2);
+    --warn-line: rgba(252, 211, 77, 0.28);
+    --warn-line-strong: rgba(252, 211, 77, 0.45);
+    --warn-solid: #fcd34d;
+
+    /* Status — danger / transport-stop */
+    --danger-fg: #fecdd3;
+    --danger-bg: rgba(244, 63, 94, 0.1);
+    --danger-bg-strong: rgba(244, 63, 94, 0.2);
+    --danger-line: rgba(251, 113, 133, 0.25);
+    --danger-line-strong: rgba(251, 113, 133, 0.42);
+    --danger-solid: #fb7185;
+
+    /* Meters, sparkline and the spectrum canvas */
+    --meter-track: rgba(255, 255, 255, 0.06);
+    --meter-peak: rgba(255, 255, 255, 0.7);
+    --spark-stroke: rgba(161, 161, 170, 0.8);
+    --viz-output: rgba(52, 211, 153, 0.82);
+    --viz-input: rgba(148, 163, 184, 0.16);
+    --viz-idle: rgba(255, 255, 255, 0.05);
+
+    /* Range inputs */
+    --range-track: rgba(255, 255, 255, 0.12);
+    --range-thumb: #d4d4d8;
+    --range-thumb-hover: #fafafa;
+    --range-thumb-border: rgba(0, 0, 0, 0.4);
+    --range-thumb-disabled: #52525b;
+
+    /* Scrollbars */
+    --scrollbar-track: rgba(255, 255, 255, 0.04);
+    --scrollbar-thumb: rgba(255, 255, 255, 0.16);
+    --scrollbar-thumb-hover: rgba(255, 255, 255, 0.26);
+
+    /* frost-lite control tokens — see .frost-control below. */
+    --frost-bg: rgba(255, 255, 255, 0.055);
+    --frost-bg-hover: rgba(255, 255, 255, 0.085);
+    --frost-bg-pressed: rgba(255, 255, 255, 0.115);
+    --frost-border: rgba(255, 255, 255, 0.1);
+    --frost-border-hover: rgba(255, 255, 255, 0.2);
+    --frost-highlight: rgba(255, 255, 255, 0.1);
+    --frost-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+    --frost-focus: rgba(255, 255, 255, 0.55);
+    --frost-radius: 8px;
+    /* Selected segmented-control item. Split from the pressed state because
+       the two themes need opposite treatments: a lifted lighter pill on dark,
+       a lifted white pill on a grey trough in light. */
+    --frost-bg-selected: rgba(255, 255, 255, 0.115);
+    --frost-border-selected: rgba(255, 255, 255, 0.2);
+    --frost-shadow-selected: 0 1px 2px rgba(0, 0, 0, 0.45);
+  }
+
+  /*
+   * Light: a quiet neutral tool, not a tinted theme. Surfaces are white and
+   * warm-neutral greys; the status hues keep their identity but are darkened
+   * until body-size text clears WCAG AA (>= 4.5:1) on the surface they sit on.
+   */
+  :root[data-theme='light'] {
+    color-scheme: light;
+
+    --surface-base: #f4f4f5;
+    --surface-panel: #ffffff;
+    --surface-raised: #fafafa;
+    --surface-sunken: #e9e9ec;
+    --surface-input: #ffffff;
+    --surface-overlay: #ffffff;
+    --surface-header: rgba(255, 255, 255, 0.95);
+    --scrim: rgba(24, 24, 27, 0.45);
+    --overlay-shadow: rgba(24, 24, 27, 0.18);
+
+    --control-bg: #f4f4f5;
+    --control-bg-hover: #e4e4e7;
+
+    --text-primary: #18181b;
+    --text-secondary: #3f3f46;
+    --text-muted: #52525b;
+    --text-subtle: #5b5b64;
+    --text-faint: #6b6b74;
+
+    --primary-bg: #18181b;
+    --primary-bg-hover: #000000;
+    --primary-fg: #fafafa;
+
+    --border-subtle: #e4e4e7;
+    --border-default: #d4d4d8;
+    --border-hover: #a1a1aa;
+
+    --ok-fg: #065f46;
+    --ok-fg-soft: #047857;
+    --ok-bg: #ecfdf5;
+    --ok-bg-strong: #d1fae5;
+    --ok-line: #a7f3d0;
+    --ok-line-strong: #6ee7b7;
+    --ok-solid: #059669;
+
+    --warn-fg: #854d0e;
+    --warn-fg-soft: #92400e;
+    --warn-bg: #fffbeb;
+    --warn-bg-strong: #fef3c7;
+    --warn-line: #fde68a;
+    --warn-line-strong: #fcd34d;
+    --warn-solid: #d97706;
+
+    --danger-fg: #9f1239;
+    --danger-bg: #fff1f2;
+    --danger-bg-strong: #ffe4e6;
+    --danger-line: #fecdd3;
+    --danger-line-strong: #fda4af;
+    --danger-solid: #e11d48;
+
+    --meter-track: #e4e4e7;
+    --meter-peak: #18181b;
+    --spark-stroke: #52525b;
+    --viz-output: rgba(5, 150, 105, 0.85);
+    --viz-input: rgba(100, 116, 139, 0.28);
+    --viz-idle: rgba(24, 24, 27, 0.07);
+
+    --range-track: #d4d4d8;
+    --range-thumb: #3f3f46;
+    --range-thumb-hover: #18181b;
+    --range-thumb-border: rgba(255, 255, 255, 0.7);
+    --range-thumb-disabled: #a1a1aa;
+
+    --scrollbar-track: rgba(24, 24, 27, 0.05);
+    --scrollbar-thumb: rgba(24, 24, 27, 0.22);
+    --scrollbar-thumb-hover: rgba(24, 24, 27, 0.35);
+
+    --frost-bg: rgba(9, 9, 11, 0.04);
+    --frost-bg-hover: rgba(9, 9, 11, 0.07);
+    --frost-bg-pressed: rgba(9, 9, 11, 0.12);
+    --frost-border: rgba(9, 9, 11, 0.12);
+    --frost-border-hover: rgba(9, 9, 11, 0.24);
+    --frost-highlight: rgba(255, 255, 255, 0.85);
+    --frost-shadow: 0 1px 2px rgba(9, 9, 11, 0.08);
+    --frost-focus: rgba(9, 9, 11, 0.55);
+    --frost-bg-selected: #ffffff;
+    --frost-border-selected: rgba(9, 9, 11, 0.14);
+    --frost-shadow-selected: 0 1px 3px rgba(9, 9, 11, 0.16);
   }
 
   html,
@@ -14,29 +203,86 @@
   }
 
   body {
-    @apply text-zinc-200 antialiased;
-    background-color: #0a0a0c;
+    @apply antialiased;
+    color: var(--text-secondary);
+    background-color: var(--surface-base);
     font-family: Aptos, 'Segoe UI Variable Display', 'Segoe UI', sans-serif;
-    letter-spacing: -0.01em;
+    letter-spacing: 0;
   }
 }
 
 @layer components {
   /* Flat panel used across the workspace */
   .panel {
-    @apply rounded-lg border border-white/[0.08] bg-[#101013];
+    @apply rounded-lg border border-line bg-panel;
   }
 
   .panel-kicker {
-    @apply text-[10px] font-semibold uppercase tracking-[0.22em] text-zinc-500;
+    @apply text-[10px] font-semibold uppercase tracking-[0.22em] text-fg-subtle;
   }
 
   .panel-title {
-    @apply mt-1 text-base font-semibold tracking-[-0.02em] text-zinc-100;
+    @apply mt-1 text-base font-semibold tracking-normal text-fg;
   }
 
   .chip-button {
-    @apply rounded border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[11px] font-medium uppercase tracking-[0.12em] text-zinc-400 transition hover:border-white/25 hover:bg-white/[0.07] hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-40;
+    @apply rounded border border-line-strong bg-control px-3 py-1.5 text-[11px] font-medium uppercase tracking-[0.12em] text-fg-muted transition hover:border-line-hover hover:bg-control-hover hover:text-fg disabled:cursor-not-allowed disabled:opacity-40;
+  }
+
+  /* frost-lite: the frosted-control treatment for chrome that floats above
+   * content — the header tab nav, the header settings button and the modal
+   * close button.
+   *
+   * Deliberately NO backdrop-filter. Everything behind these controls is a
+   * flat fill (#0a0a0c body, #101013 panels), so blurring it would return the
+   * same colour while still forcing a compositing layer and a re-filter on
+   * every frame the backdrop changes — a cost a realtime audio app should not
+   * pay for zero visual difference. The glass read comes from the layered
+   * alpha, the 1px top highlight and the defined edge instead.
+   *
+   * Lives in the components layer, so any Tailwind utility (radius, colour)
+   * on the same element still wins — utilities are emitted after components.
+   */
+  .frost-control {
+    border: 1px solid var(--frost-border);
+    border-radius: var(--frost-radius);
+    background-color: var(--frost-bg);
+    box-shadow:
+      inset 0 1px 0 var(--frost-highlight),
+      var(--frost-shadow);
+    transition-property: color, background-color, border-color, box-shadow, transform;
+    transition-duration: 150ms;
+    transition-timing-function: ease-out;
+  }
+
+  .frost-control:hover {
+    border-color: var(--frost-border-hover);
+    background-color: var(--frost-bg-hover);
+  }
+
+  /* Pressed reads as MORE solid, not less: a control that fades under the
+   * pointer feels like it is dissolving rather than depressing. */
+  .frost-control:active {
+    background-color: var(--frost-bg-pressed);
+    transform: translateY(0.5px);
+  }
+
+  /* Persistent "on" state (the selected tab) sits at the pressed alpha with a
+   * brighter edge, so it stays clearly ahead of its unselected siblings and
+   * does not dim when the pointer leaves. */
+  .frost-control[data-selected='true'],
+  .frost-control[data-selected='true']:hover {
+    border-color: var(--frost-border-selected);
+    background-color: var(--frost-bg-selected);
+    box-shadow:
+      inset 0 1px 0 var(--frost-highlight),
+      var(--frost-shadow-selected);
+  }
+
+  .frost-control:focus-visible,
+  .chip-button:focus-visible {
+    outline: 2px solid var(--frost-focus);
+    outline-offset: 2px;
   }
 }
 
@@ -46,21 +292,21 @@
 }
 
 ::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--scrollbar-track);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.16);
+  background: var(--scrollbar-thumb);
   border-radius: 2px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.26);
+  background: var(--scrollbar-thumb-hover);
 }
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.16) rgba(255, 255, 255, 0.04);
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
 }
 
 button,
@@ -69,18 +315,21 @@ input[type='range'] {
   @apply transition-colors duration-150 ease-out;
 }
 
+/* Keep UA-rendered dropdown chrome and option rows aligned with the active
+   theme. Explicit option colours cover engines that do not inherit the
+   select's foreground/background into the popup. */
 .native-select-safe {
-  color-scheme: light;
+  color-scheme: inherit;
 }
 
 .native-select-safe option {
-  color: #111827;
-  background-color: #f4f4f5;
+  color: var(--text-primary);
+  background-color: var(--surface-panel);
 }
 
 .native-select-safe option:checked {
-  color: #0f172a;
-  background-color: #e4e4e7;
+  color: var(--text-primary);
+  background-color: var(--surface-sunken);
 }
 
 /* Fader-style range inputs: flat track, rectangular cap */
@@ -91,7 +340,7 @@ input[type='range'] {
 input[type='range']::-webkit-slider-runnable-track {
   height: 4px;
   border-radius: 1px;
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--range-track);
 }
 
 input[type='range']::-webkit-slider-thumb {
@@ -101,31 +350,31 @@ input[type='range']::-webkit-slider-thumb {
   height: 16px;
   width: 10px;
   border-radius: 2px;
-  background: #d4d4d8;
-  border: 1px solid rgba(0, 0, 0, 0.4);
+  background: var(--range-thumb);
+  border: 1px solid var(--range-thumb-border);
 }
 
 input[type='range']::-webkit-slider-thumb:hover {
-  background: #fafafa;
+  background: var(--range-thumb-hover);
 }
 
 input[type='range']::-moz-range-track {
   height: 4px;
   border-radius: 1px;
   border: 0;
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--range-track);
 }
 
 input[type='range']::-moz-range-thumb {
   height: 16px;
   width: 10px;
   border-radius: 2px;
-  background: #d4d4d8;
-  border: 1px solid rgba(0, 0, 0, 0.4);
+  background: var(--range-thumb);
+  border: 1px solid var(--range-thumb-border);
 }
 
 input[type='range']:disabled::-webkit-slider-thumb {
-  background: #52525b;
+  background: var(--range-thumb-disabled);
 }
 
 /* Compact slider variant for effect cards */
@@ -151,10 +400,10 @@ input[type='range'].fx-slider::-moz-range-thumb {
 @keyframes pulse-border {
   0%,
   100% {
-    border-color: rgba(255, 255, 255, 0.4);
+    border-color: var(--border-hover);
   }
   50% {
-    border-color: rgba(255, 255, 255, 0.12);
+    border-color: var(--border-default);
   }
 }
 

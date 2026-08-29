@@ -43,6 +43,12 @@ export default function FileConverter({ voice, effects, activeModel }) {
         f0Method: voice.f0Method,
         effects,
         useModel: useModel && Boolean(activeModel),
+        // The panel promises "uses current studio settings", so the Voice Lab
+        // advanced controls have to travel with the render too.
+        indexRate: voice.indexRate,
+        filterRadius: voice.filterRadius,
+        rmsMixRate: voice.rmsMixRate,
+        protect: voice.protect,
       });
       const name = `${file.name.replace(/\.[^.]+$/, '')}_converted.wav`;
       setResult((prev) => {
@@ -63,12 +69,12 @@ export default function FileConverter({ voice, effects, activeModel }) {
           <p className="panel-kicker">File Converter</p>
           <h2 className="panel-title">Offline voice conversion</h2>
         </div>
-        <span className="rounded border border-white/10 bg-white/[0.03] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-400">
+        <span className="rounded border border-line-strong bg-control px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-fg-muted">
           Uses current studio settings
         </span>
       </div>
 
-      <p className="mt-2 text-sm text-zinc-500">
+      <p className="mt-2 text-sm text-fg-subtle">
         Render a whole audio file through {activeModel ? 'the active model and ' : ''}the
         effect chain — pitch {voice.pitch > 0 ? '+' : ''}{voice.pitch} st,
         formant {voice.formant > 0 ? '+' : ''}{voice.formant} st, {fxCount} effect{fxCount === 1 ? '' : 's'}.
@@ -91,8 +97,8 @@ export default function FileConverter({ voice, effects, activeModel }) {
         onClick={() => fileInputRef.current?.click()}
         className={`mt-5 cursor-pointer rounded-md border border-dashed p-8 text-center transition-all duration-200 ${
           dragActive
-            ? 'border-white/40 bg-white/[0.05] drag-active'
-            : 'border-white/[0.12] bg-white/[0.02] hover:border-white/25 hover:bg-white/[0.04]'
+            ? 'border-line-hover bg-control-hover drag-active'
+            : 'border-line-strong bg-raised hover:border-line-hover hover:bg-control'
         }`}
       >
         <input
@@ -105,22 +111,22 @@ export default function FileConverter({ voice, effects, activeModel }) {
           }}
           className="hidden"
         />
-        <svg className="mx-auto mb-3 h-9 w-9 text-zinc-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <svg className="mx-auto mb-3 h-9 w-9 text-fg-subtle" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
           <path d="M9 18V5l12-2v13" />
           <circle cx="6" cy="18" r="3" />
           <circle cx="18" cy="16" r="3" />
         </svg>
         {file ? (
           <>
-            <p className="text-sm font-medium text-zinc-100">{file.name}</p>
-            <p className="mt-1 text-xs text-zinc-500">{formatSize(file.size)} · click to choose another file</p>
+            <p className="text-sm font-medium text-fg">{file.name}</p>
+            <p className="mt-1 text-xs text-fg-subtle">{formatSize(file.size)} · click to choose another file</p>
           </>
         ) : (
           <>
-            <p className="text-sm font-medium text-zinc-200">
+            <p className="text-sm font-medium text-fg-secondary">
               {dragActive ? 'Drop the audio file here' : 'Drop an audio file or click to browse'}
             </p>
-            <p className="mt-1 text-xs uppercase tracking-[0.2em] text-zinc-600">
+            <p className="mt-1 text-xs uppercase tracking-[0.2em] text-fg-faint">
               wav · mp3 · flac · ogg · m4a
             </p>
           </>
@@ -128,16 +134,16 @@ export default function FileConverter({ voice, effects, activeModel }) {
       </div>
 
       <div className="mt-5 flex flex-wrap items-center justify-between gap-4">
-        <label className={`flex items-center gap-2.5 text-sm ${activeModel ? 'text-zinc-300' : 'text-zinc-600'}`}>
+        <label className={`flex items-center gap-2.5 text-sm ${activeModel ? 'text-fg-secondary' : 'text-fg-faint'}`}>
           <input
             type="checkbox"
             checked={useModel && Boolean(activeModel)}
             disabled={!activeModel}
             onChange={(event) => setUseModel(event.target.checked)}
-            className="h-4 w-4 accent-zinc-300"
+            className="h-4 w-4 accent-primary"
           />
           Run through active model
-          <span className="text-xs text-zinc-600">
+          <span className="text-xs text-fg-faint">
             {activeModel ? `(${activeModel})` : '(no model active — DSP only)'}
           </span>
         </label>
@@ -145,7 +151,7 @@ export default function FileConverter({ voice, effects, activeModel }) {
         <button
           onClick={handleConvert}
           disabled={!file || converting}
-          className="rounded-md bg-zinc-100 px-6 py-3 text-sm font-bold uppercase tracking-[0.14em] text-zinc-900 transition hover:bg-white disabled:cursor-not-allowed disabled:bg-white/[0.06] disabled:text-zinc-500"
+          className="rounded-md bg-primary px-6 py-3 text-sm font-bold uppercase tracking-[0.14em] text-primary-fg transition hover:bg-primary-hover disabled:cursor-not-allowed disabled:bg-control-hover disabled:text-fg-subtle"
         >
           {converting ? (
             <span className="flex items-center gap-2">
@@ -162,22 +168,22 @@ export default function FileConverter({ voice, effects, activeModel }) {
       </div>
 
       {converting && (
-        <p className="mt-3 text-xs text-zinc-500">
+        <p className="mt-3 text-xs text-fg-subtle">
           Long files can take a while — the whole file runs through the pipeline server-side.
         </p>
       )}
 
       {error && (
-        <div className="mt-4 rounded-md border border-rose-300/20 bg-rose-300/10 p-4">
-          <p className="text-sm text-rose-100">{error}</p>
+        <div className="mt-4 rounded-md border border-danger-line bg-danger-bg p-4">
+          <p className="text-sm text-danger-fg">{error}</p>
         </div>
       )}
 
       {result && (
-        <div className="mt-5 rounded-md border border-emerald-300/25 bg-emerald-400/[0.05] p-4">
+        <div className="mt-5 rounded-md border border-ok-line bg-ok-bg p-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-sm font-medium text-emerald-100">
-              {result.name} <span className="text-xs text-emerald-200/60">({formatSize(result.size)})</span>
+            <p className="text-sm font-medium text-ok-fg">
+              {result.name} <span className="text-xs text-ok-fg-soft">({formatSize(result.size)})</span>
             </p>
             <a href={result.url} download={result.name} className="chip-button !normal-case">
               ↓ Download WAV

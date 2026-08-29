@@ -12,9 +12,9 @@ function BigSlider({ label, value, min, max, step, unit, onChange, onReset }) {
   return (
     <div>
       <div className="flex items-center justify-between gap-3">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-500">{label}</p>
+        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-fg-subtle">{label}</p>
         <div className="flex items-center gap-2">
-          <span className={`font-mono text-xl font-semibold tabular-nums tracking-[-0.03em] ${value === 0 ? 'text-zinc-500' : 'text-zinc-100'}`}>
+          <span className={`font-mono text-xl font-semibold tabular-nums tracking-normal ${value === 0 ? 'text-fg-subtle' : 'text-fg'}`}>
             {value > 0 ? '+' : ''}{Number(value).toFixed(1)}{unit}
           </span>
           <button
@@ -35,7 +35,7 @@ function BigSlider({ label, value, min, max, step, unit, onChange, onReset }) {
         onChange={(event) => onChange(Number(event.target.value))}
         className="mt-3 w-full"
       />
-      <div className="mt-1.5 flex items-center justify-between text-[10px] font-medium text-zinc-600">
+      <div className="mt-1.5 flex items-center justify-between text-[10px] font-medium text-fg-faint">
         <span>{min}</span>
         <span>0</span>
         <span>+{max}</span>
@@ -48,8 +48,8 @@ function MiniSlider({ label, value, min, max, step, onChange, format = (v) => v.
   return (
     <div>
       <div className="flex items-center justify-between">
-        <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-zinc-500">{label}</span>
-        <span className="font-mono text-xs tabular-nums text-zinc-300">{format(Number(value))}</span>
+        <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-fg-subtle">{label}</span>
+        <span className="font-mono text-xs tabular-nums text-fg-secondary">{format(Number(value))}</span>
       </div>
       <input
         type="range"
@@ -76,8 +76,8 @@ export default function VoiceLab({ voice, onChange, hasModel, isRunning }) {
         </div>
         <span className={`rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
           isRunning
-            ? 'border-emerald-300/30 bg-emerald-400/[0.07] text-emerald-200'
-            : 'border-white/10 bg-white/[0.03] text-zinc-500'
+            ? 'border-ok-line bg-ok-bg text-ok-fg'
+            : 'border-line-strong bg-control text-fg-subtle'
         }`}
         >
           {isRunning ? 'Live' : 'Applies on start'}
@@ -108,8 +108,8 @@ export default function VoiceLab({ voice, onChange, hasModel, isRunning }) {
         />
       </div>
 
-      <div className="mt-6 border-t border-white/[0.08] pt-5">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+      <div className="mt-6 border-t border-line pt-5">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-fg-subtle">
           F0 Method {hasModel ? '' : '· needs an RVC model'}
         </p>
         <div className="mt-3 grid grid-cols-2 gap-2">
@@ -121,12 +121,12 @@ export default function VoiceLab({ voice, onChange, hasModel, isRunning }) {
                 onClick={() => onChange({ f0Method: method.value })}
                 className={`rounded-md border px-3 py-2.5 text-left transition ${
                   selected
-                    ? 'border-white/30 bg-white/[0.07] text-zinc-100'
-                    : 'border-white/[0.08] bg-black/20 text-zinc-400 hover:border-white/20 hover:text-zinc-200'
+                    ? 'border-line-hover bg-control-hover text-fg'
+                    : 'border-line bg-raised text-fg-muted hover:border-line-hover hover:text-fg-secondary'
                 }`}
               >
                 <p className="text-sm font-semibold leading-tight">{method.label}</p>
-                <p className={`mt-0.5 text-[11px] ${selected ? 'text-zinc-400' : 'text-zinc-600'}`}>
+                <p className={`mt-0.5 text-[11px] ${selected ? 'text-fg-muted' : 'text-fg-faint'}`}>
                   {method.description}
                 </p>
               </button>
@@ -135,10 +135,10 @@ export default function VoiceLab({ voice, onChange, hasModel, isRunning }) {
         </div>
       </div>
 
-      <div className="mt-5 border-t border-white/[0.08] pt-4">
+      <div className="mt-5 border-t border-line pt-4">
         <button
           onClick={() => setShowAdvanced((v) => !v)}
-          className="flex w-full items-center justify-between text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-500 transition hover:text-zinc-300"
+          className="flex w-full items-center justify-between text-[10px] font-semibold uppercase tracking-[0.18em] text-fg-subtle transition hover:text-fg-secondary"
         >
           RVC Advanced
           <svg
@@ -164,6 +164,15 @@ export default function VoiceLab({ voice, onChange, hasModel, isRunning }) {
               onChange={(value) => onChange({ indexRate: value })}
             />
             <MiniSlider
+              label="Filter Radius"
+              value={voice.filterRadius}
+              min={0}
+              max={7}
+              step={1}
+              onChange={(value) => onChange({ filterRadius: value })}
+              format={(v) => (v >= 3 ? String(Math.round(v)) : `${Math.round(v)} · off`)}
+            />
+            <MiniSlider
               label="RMS Mix"
               value={voice.rmsMixRate}
               min={0}
@@ -179,9 +188,10 @@ export default function VoiceLab({ voice, onChange, hasModel, isRunning }) {
               step={0.01}
               onChange={(value) => onChange({ protect: value })}
             />
-            <p className="text-[11px] leading-4 text-zinc-600">
+            <p className="text-[11px] leading-4 text-fg-faint">
               Index rate blends retrieval features, RMS mix follows input loudness,
-              protect preserves breaths and consonants.
+              protect preserves breaths and consonants. Filter radius median-smooths
+              the harvest pitch track — values below 3 disable it.
             </p>
           </div>
         )}

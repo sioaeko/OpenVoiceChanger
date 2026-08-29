@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 from fastapi import APIRouter, HTTPException, Request, UploadFile
@@ -5,6 +6,13 @@ from fastapi import APIRouter, HTTPException, Request, UploadFile
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/models", tags=["models"])
+
+# Activating a model runs torch.load, loads HuBERT and does a warm-up
+# inference — seconds to a minute of pure CPU work. Calling that directly from
+# an async handler stalls the whole event loop, which freezes the live audio
+# WebSocket and every other request until it finishes. These operations run in
+# a worker thread instead; ModelManager already serialises them with its own
+# lock, so concurrent requests queue there exactly as before.
 
 
 def _get_manager(request: Request):
@@ -19,7 +27,7 @@ def _get_manager(request: Request):
 async def list_models(request: Request) -> list[dict]:
     """List all available models with metadata."""
     manager = _get_manager(request)
-    return manager.list_models()
+    return await asyncio.to_thread(manager.list_models)
 
 
 @router.post("/upload")
@@ -47,7 +55,7 @@ async def delete_model(request: Request, name: str) -> dict:
     manager = _get_manager(request)
 
     try:
-        manager.delete_model(name)
+        await asyncio.to_thread(manager.delete_model, name)
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail=f"Model not found: {name}")
     except Exception as exc:
@@ -63,7 +71,7 @@ async def activate_model(request: Request, name: str) -> dict:
     manager = _get_manager(request)
 
     try:
-        result = manager.activate_model(name)
+        result = await asyncio.to_thread(manager.activate_model, name)
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail=f"Model not found: {name}")
     except RuntimeError as exc:
@@ -76,7 +84,7 @@ async def activate_model(request: Request, name: str) -> dict:
 async def deactivate_model(request: Request) -> dict:
     """Deactivate the currently active model."""
     manager = _get_manager(request)
-    manager.deactivate_model()
+    await asyncio.to_thread(manager.deactivate_model)
     return {"status": "deactivated"}
 
 
@@ -84,7 +92,7 @@ async def deactivate_model(request: Request) -> dict:
 async def get_active_model(request: Request) -> dict:
     """Get info about the currently active model."""
     manager = _get_manager(request)
-    active = manager.get_active_model()
+    active = await asyncio.to_thread(manager.get_active_model)
     if active is None:
         return {"active": False}
     return active

@@ -5,6 +5,8 @@ import time
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+from backend.config import DEFAULT_F0_METHOD, settings
+from backend.security import is_origin_allowed
 from backend.services.audio_processor import audio_to_bytes, bytes_to_audio
 from backend.services.dsp_effects import EffectsChain
 
@@ -14,6 +16,19 @@ router = APIRouter()
 
 # How often to send latency status messages (seconds)
 STATUS_INTERVAL = 1.0
+MIN_SAMPLE_RATE = 8000
+MAX_SAMPLE_RATE = 192000
+MIN_CHUNK_SIZE = 128
+MAX_CHUNK_SIZE = 65536
+
+
+def _bounded_int(value, minimum: int, maximum: int) -> int | None:
+    """Return an integer inside the protocol range, or ``None`` if invalid."""
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return parsed if minimum <= parsed <= maximum else None
 
 
 @router.websocket("/ws/audio")
@@ -29,7 +44,22 @@ async def audio_websocket(websocket: WebSocket) -> None:
            sends back binary responses. The response header's second uint32
            carries the server processing time in hundredths of a millisecond.
         5. Server periodically sends JSON status messages with a timing breakdown.
+
+    Cross-site WebSocket hijacking is blocked before the handshake completes:
+    browsers do not apply the same-origin policy to WebSocket connections, so
+    the Origin header is validated here the same way CORS validates it for HTTP.
     """
+    origin = websocket.headers.get("origin")
+    if not is_origin_allowed(
+        origin,
+        websocket.headers.get("host"),
+        settings.CORS_ORIGINS,
+        settings.ALLOW_ANY_ORIGIN,
+    ):
+        logger.warning("Rejected WebSocket handshake from origin %r", origin)
+        await websocket.close(code=1008, reason="Origin not allowed")
+        return
+
     await websocket.accept()
     client_id = id(websocket)
     logger.info("WebSocket connected: %s", client_id)
@@ -46,12 +76,15 @@ async def audio_websocket(websocket: WebSocket) -> None:
         "chunk_size": 4096,
         "pitch_shift": 0.0,
         "formant_shift": 0.0,
-        "f0_method": "pm",
+        "f0_method": DEFAULT_F0_METHOD,
         "index_rate": None,
         "filter_radius": None,
         "rms_mix_rate": None,
         "protect": None,
         "effects": {},
+        # Full conversion bypass for A/B monitoring: routing stays live, the
+        # signal returns untouched. Distinct from clearing the effect rack.
+        "bypass": False,
         "chain": None,
         "configured": False,
         "last_status_time": time.perf_counter(),
@@ -100,7 +133,7 @@ async def audio_websocket(websocket: WebSocket) -> None:
         except Exception:
             pass
     finally:
-        model_manager.release_stream(conn_state["stream_id"])
+        await asyncio.to_thread(model_manager.release_stream, conn_state["stream_id"])
 
 
 def _get_chain(conn_state: dict) -> EffectsChain:
@@ -130,13 +163,25 @@ async def _receive_config(websocket: WebSocket, conn_state: dict) -> dict | None
         await websocket.close(code=1003, reason="Invalid JSON config")
         return None
 
-    sample_rate = int(config.get("sample_rate", conn_state["sample_rate"]))
-    chunk_size = int(config.get("chunk_size", conn_state["chunk_size"]))
+    if not isinstance(config, dict):
+        await websocket.close(code=1003, reason="Config must be a JSON object")
+        return None
 
-    if not (8000 <= sample_rate <= 192000):
+    sample_rate = _bounded_int(
+        config.get("sample_rate", conn_state["sample_rate"]),
+        MIN_SAMPLE_RATE,
+        MAX_SAMPLE_RATE,
+    )
+    chunk_size = _bounded_int(
+        config.get("chunk_size", conn_state["chunk_size"]),
+        MIN_CHUNK_SIZE,
+        MAX_CHUNK_SIZE,
+    )
+
+    if sample_rate is None:
         await websocket.close(code=1003, reason="sample_rate must be 8000–192000")
         return None
-    if not (128 <= chunk_size <= 65536):
+    if chunk_size is None:
         await websocket.close(code=1003, reason="chunk_size must be 128–65536")
         return None
 
@@ -169,12 +214,29 @@ def _apply_settings(data: dict, conn_state: dict) -> None:
             conn_state["protect"] = float(data["protect"])
         if "effects" in data and isinstance(data["effects"], dict):
             conn_state["effects"] = data["effects"]
+        if "bypass" in data:
+            conn_state["bypass"] = bool(data["bypass"])
     except (TypeError, ValueError) as exc:
         logger.warning("Ignoring invalid settings values: %s", exc)
 
 
 def _process_frame_sync(audio, model_manager, conn_state: dict) -> tuple:
-    """Full processing path for one chunk. Runs inside a worker thread."""
+    """Full processing path for one chunk. Runs inside a worker thread.
+
+    When ``bypass`` is set the chunk is returned exactly as received: no noise
+    gate, no model inference, no pitch or formant shift, no effect rack. The
+    caller still sends it back over the same WebSocket, so the microphone,
+    transport and output routing keep running and only the conversion is
+    removed — that is what makes it a true A/B against the converted signal.
+
+    Per-stream state (the RVC context window, the effect delay lines) is left
+    untouched rather than reset, so switching back resumes from the same place;
+    the stale history can produce a brief artifact on the first chunk after
+    un-bypassing, which is preferable to discarding the stream's context.
+    """
+    if conn_state.get("bypass"):
+        return audio, "bypass", 0.0, 0.0
+
     chain = conn_state["chain"]
     effects = conn_state["effects"]
     pitch_shift = conn_state["pitch_shift"]
@@ -252,28 +314,55 @@ def _handle_json_message(text: str, conn_state: dict) -> None:
         logger.warning("Invalid JSON message: %s", text[:200])
         return
 
+    if not isinstance(data, dict):
+        logger.warning("Ignoring non-object settings message")
+        return
+
     _apply_settings(data, conn_state)
 
-    try:
-        if "sample_rate" in data:
-            conn_state["sample_rate"] = int(data["sample_rate"])
-        if "chunk_size" in data:
-            conn_state["chunk_size"] = int(data["chunk_size"])
-    except (TypeError, ValueError):
-        pass
+    transport_fields = {
+        "sample_rate": (MIN_SAMPLE_RATE, MAX_SAMPLE_RATE),
+        "chunk_size": (MIN_CHUNK_SIZE, MAX_CHUNK_SIZE),
+    }
+    for key, (minimum, maximum) in transport_fields.items():
+        if key not in data:
+            continue
+        value = _bounded_int(data[key], minimum, maximum)
+        if value is None:
+            logger.warning(
+                "Ignoring invalid %s update %r (expected %d–%d)",
+                key,
+                data[key],
+                minimum,
+                maximum,
+            )
+            continue
+        conn_state[key] = value
 
 
 async def _send_status(websocket: WebSocket, model_manager, conn_state: dict) -> None:
     """Send a JSON status message with a processing-time breakdown."""
-    active = model_manager.get_active_model()
+    # Model activation owns a threading.Lock while checkpoints load and warm
+    # up. Reading status in a worker keeps that lock wait off the event loop.
+    active = await asyncio.to_thread(model_manager.get_active_model)
+    bypassed = bool(conn_state.get("bypass"))
+    if bypassed:
+        mode = "bypass"
+    else:
+        mode = conn_state["mode"] if active else "dsp"
     status = {
         "type": "status",
         "latency_ms": round(conn_state["latency_ms"], 2),
         "model_ms": round(conn_state["model_ms"], 2),
         "dsp_ms": round(conn_state["dsp_ms"], 2),
-        "mode": conn_state["mode"] if active else "dsp",
+        "mode": mode,
+        "bypass": bypassed,
         "active_model": active["name"] if active else None,
-        "effects_active": EffectsChain.count_active(
+        # Nothing is applied while bypassed, so report what is actually running
+        # rather than what the rack is configured to do.
+        "effects_active": 0
+        if bypassed
+        else EffectsChain.count_active(
             conn_state["effects"], conn_state["formant_shift"]
         ),
     }
