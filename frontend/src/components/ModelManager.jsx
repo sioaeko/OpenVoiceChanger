@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { CircleX, LoaderCircle, RefreshCw, Trash2, Upload } from 'lucide-react';
 import {
   fetchModels,
   uploadModel,
@@ -201,19 +202,7 @@ export default function ModelManager({ activeModel = null, onActiveModelChange }
           className="rounded border border-line-strong bg-control p-2 text-fg-subtle transition hover:border-line-hover hover:bg-control-hover hover:text-fg-secondary"
           title="Refresh models"
         >
-          <svg
-            className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`}
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <polyline points="23 4 23 10 17 10" />
-            <polyline points="1 20 1 14 7 14" />
-            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-          </svg>
+          <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} aria-hidden="true" />
         </button>
       </div>
 
@@ -223,6 +212,9 @@ export default function ModelManager({ activeModel = null, onActiveModelChange }
       </p>
 
       <div
+        role="button"
+        tabIndex={uploading ? -1 : 0}
+        aria-label="Upload voice model files"
         onDrop={handleDrop}
         onDragOver={(e) => {
           e.preventDefault();
@@ -233,6 +225,11 @@ export default function ModelManager({ activeModel = null, onActiveModelChange }
           setDragActive(false);
         }}
         onClick={() => fileInputRef.current?.click()}
+        onKeyDown={(event) => {
+          if (uploading || (event.key !== 'Enter' && event.key !== ' ')) return;
+          event.preventDefault();
+          fileInputRef.current?.click();
+        }}
         className={`relative mt-5 cursor-pointer rounded-md border border-dashed p-7 text-center transition-all duration-200 ${
           dragActive
             ? 'border-line-hover bg-control-hover drag-active'
@@ -247,19 +244,7 @@ export default function ModelManager({ activeModel = null, onActiveModelChange }
           onChange={handleFileSelect}
           className="hidden"
         />
-        <svg
-          className="mx-auto mb-3 h-9 w-9 text-fg-subtle"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-          <polyline points="17 8 12 3 7 8" />
-          <line x1="12" y1="3" x2="12" y2="15" />
-        </svg>
+        <Upload className="mx-auto mb-3 h-9 w-9 text-fg-subtle" strokeWidth={1.5} aria-hidden="true" />
         <p className="text-sm font-medium text-fg-secondary">
           {dragActive ? 'Drop model files here' : 'Drop checkpoints or click to upload'}
         </p>
@@ -284,17 +269,7 @@ export default function ModelManager({ activeModel = null, onActiveModelChange }
 
       {error && (
         <div className="mt-4 flex items-start gap-2 rounded-md border border-danger-line bg-danger-bg p-4">
-          <svg
-            className="mt-0.5 h-4 w-4 flex-shrink-0 text-danger-fg"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-          >
-            <circle cx="12" cy="12" r="10" />
-            <line x1="15" y1="9" x2="9" y2="15" />
-            <line x1="9" y1="9" x2="15" y2="15" />
-          </svg>
+          <CircleX className="mt-0.5 h-4 w-4 flex-shrink-0 text-danger-fg" aria-hidden="true" />
           <p className="text-sm text-danger-fg">{error}</p>
         </div>
       )}
@@ -302,10 +277,7 @@ export default function ModelManager({ activeModel = null, onActiveModelChange }
       <div className="mt-5 space-y-3">
         {loading && models.length === 0 ? (
           <div className="flex items-center justify-center py-10">
-            <svg className="h-5 w-5 animate-spin text-fg-subtle" viewBox="0 0 24 24" fill="none">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-            </svg>
+            <LoaderCircle className="h-5 w-5 animate-spin text-fg-subtle" aria-hidden="true" />
           </div>
         ) : models.length === 0 ? (
           <p className="rounded-md border border-line bg-raised px-4 py-8 text-center text-sm text-fg-subtle">
@@ -377,12 +349,13 @@ export default function ModelManager({ activeModel = null, onActiveModelChange }
                     <button
                       onClick={() => handleDelete(name)}
                       disabled={isOperating}
-                      className={`rounded border px-3 py-1.5 text-xs font-medium uppercase tracking-[0.12em] transition disabled:opacity-50 ${
+                      className={`inline-flex min-w-[84px] items-center justify-center gap-1.5 rounded border px-3 py-1.5 text-xs font-medium uppercase tracking-[0.12em] transition disabled:opacity-50 ${
                         deleteConfirm === name
                           ? 'border-danger-line-strong bg-danger-bg-strong text-danger-fg'
                           : 'border-line-strong bg-control text-fg-subtle hover:border-danger-line hover:bg-danger-bg hover:text-danger-fg'
                       }`}
                     >
+                      <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                       {deleteConfirm === name ? 'Confirm' : 'Delete'}
                     </button>
                   </div>

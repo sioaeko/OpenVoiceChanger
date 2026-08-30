@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef } from 'react';
+import { Pause } from 'lucide-react';
 import { levelToPercent, nextPeak } from '../lib/meters';
 
 // Solid zone coloring, VU convention: green / yellow / red. Listed as literal
@@ -145,6 +146,11 @@ export default function MonitorDisplay({
           <span className="rounded border border-warn-line-strong bg-warn-bg px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-warn-fg">
             Bypassed
           </span>
+        ) : serverStats?.inferenceSleeping ? (
+          <span className="inline-flex items-center gap-1.5 rounded border border-ok-line bg-ok-bg px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-ok-fg">
+            <Pause className="h-3 w-3" aria-hidden="true" />
+            Saver
+          </span>
         ) : serverStats?.effectsActive > 0 ? (
           <span className="rounded border border-line-strong bg-control px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-fg-secondary">
             {serverStats.effectsActive} FX
@@ -174,7 +180,7 @@ export default function MonitorDisplay({
         </div>
       </div>
 
-      <div className="mt-3 grid grid-cols-3 gap-2">
+      <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
         <StatChip
           label="Model"
           value={serverStats?.modelMs > 0 ? `${Math.round(serverStats.modelMs)}ms` : '--'}
@@ -184,6 +190,10 @@ export default function MonitorDisplay({
           value={serverStats?.dspMs > 0 ? `${Math.max(1, Math.round(serverStats.dspMs))}ms` : '--'}
         />
         <StatChip label="Network" value={latencyMs > 0 ? `${networkMs}ms` : '--'} />
+        <StatChip
+          label="Duty"
+          value={serverStats?.activeModel ? `${Math.round(serverStats.inferenceDutyPercent || 0)}%` : '--'}
+        />
       </div>
     </section>
   );

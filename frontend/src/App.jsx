@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Settings2 } from 'lucide-react';
 import Layout from './components/Layout';
 import StatusIndicator from './components/StatusIndicator';
 import AudioControls from './components/AudioControls';
@@ -11,6 +12,7 @@ import EffectsRack from './components/EffectsRack';
 import PresetBar from './components/PresetBar';
 import Recorder from './components/Recorder';
 import FileConverter from './components/FileConverter';
+import GitHubStarButton from './components/GitHubStarButton';
 import useWebSocket from './hooks/useWebSocket';
 import useAudioPipeline from './hooks/useAudioPipeline';
 import useAudioDevices from './hooks/useAudioDevices';
@@ -59,12 +61,19 @@ const DEFAULT_RUNTIME_INFO = {
 const DEFAULT_RUNTIME_CONFIG = {
   sampleRate: 40000,
   chunkSize: 4096,
+  silenceSaver: true,
+  silenceThresholdDb: -52,
   runtime: DEFAULT_RUNTIME_INFO,
 };
 
 function normalizePositiveInt(value, fallback) {
   const numeric = Number(value);
   return Number.isFinite(numeric) && numeric > 0 ? Math.round(numeric) : fallback;
+}
+
+function normalizeSilenceThreshold(value, fallback) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric >= -80 && numeric <= -20 ? numeric : fallback;
 }
 
 function readStored(key) {
@@ -93,10 +102,24 @@ function mergeRuntimeConfig(config, stored = null) {
     config?.chunk_size ?? config?.chunkSize,
     DEFAULT_RUNTIME_CONFIG.chunkSize
   );
+  const baseSilenceSaver = typeof config?.silence_saver === 'boolean'
+    ? config.silence_saver
+    : DEFAULT_RUNTIME_CONFIG.silenceSaver;
+  const baseSilenceThresholdDb = normalizeSilenceThreshold(
+    config?.silence_threshold_db,
+    DEFAULT_RUNTIME_CONFIG.silenceThresholdDb
+  );
 
   return {
     sampleRate: normalizePositiveInt(stored?.sampleRate, baseSampleRate),
     chunkSize: normalizePositiveInt(stored?.chunkSize, baseChunkSize),
+    silenceSaver: typeof stored?.silenceSaver === 'boolean'
+      ? stored.silenceSaver
+      : baseSilenceSaver,
+    silenceThresholdDb: normalizeSilenceThreshold(
+      stored?.silenceThresholdDb,
+      baseSilenceThresholdDb
+    ),
     runtime: {
       onnx: {
         ...DEFAULT_RUNTIME_INFO.onnx,
@@ -180,6 +203,8 @@ export default function App() {
     protect: voice.protect,
     effects,
     bypass,
+    silence_saver: runtimeConfig.silenceSaver,
+    silence_threshold_db: runtimeConfig.silenceThresholdDb,
   };
 
   const settingsDebounceRef = useRef(null);
@@ -357,22 +382,38 @@ export default function App() {
           ...currentConfig,
           sampleRate: normalizePositiveInt(partialConfig.sampleRate, currentConfig.sampleRate),
           chunkSize: normalizePositiveInt(partialConfig.chunkSize, currentConfig.chunkSize),
+          silenceSaver: typeof partialConfig.silenceSaver === 'boolean'
+            ? partialConfig.silenceSaver
+            : currentConfig.silenceSaver,
+          silenceThresholdDb: normalizeSilenceThreshold(
+            partialConfig.silenceThresholdDb,
+            currentConfig.silenceThresholdDb
+          ),
         };
 
         writeStored(GLOBAL_SETTINGS_STORAGE_KEY, {
           sampleRate: nextRuntimeConfig.sampleRate,
           chunkSize: nextRuntimeConfig.chunkSize,
+          silenceSaver: nextRuntimeConfig.silenceSaver,
+          silenceThresholdDb: nextRuntimeConfig.silenceThresholdDb,
         });
         applyConfig({
           sample_rate: nextRuntimeConfig.sampleRate,
           chunk_size: nextRuntimeConfig.chunkSize,
         });
 
-        if (!pipeline.isRunning && wsStatus === 'connected') {
-          sendSettings({
-            sample_rate: nextRuntimeConfig.sampleRate,
-            chunk_size: nextRuntimeConfig.chunkSize,
-          });
+        if (wsStatus === 'connected') {
+          const liveSettings = {
+            silence_saver: nextRuntimeConfig.silenceSaver,
+            silence_threshold_db: nextRuntimeConfig.silenceThresholdDb,
+          };
+          if (!pipeline.isRunning) {
+            Object.assign(liveSettings, {
+              sample_rate: nextRuntimeConfig.sampleRate,
+              chunk_size: nextRuntimeConfig.chunkSize,
+            });
+          }
+          sendSettings(liveSettings);
         }
 
         return nextRuntimeConfig;
@@ -403,26 +444,20 @@ export default function App() {
   // --- Render ----------------------------------------------------------------
 
   const headerActions = (
-    <button
-      onClick={() => setIsSettingsOpen(true)}
-      /* frost-control owns the surface, border, radius, transition and focus
-         ring — the previous bg/border utilities would have overridden it. */
-      className="frost-control inline-flex h-8 w-8 items-center justify-center text-fg-muted hover:text-fg-secondary"
-      title="Session settings"
-      aria-label="Open settings"
-    >
-      <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <circle cx="12" cy="12" r="3" />
-        <path d="M12 2v2" />
-        <path d="M12 20v2" />
-        <path d="m4.93 4.93 1.41 1.41" />
-        <path d="m17.66 17.66 1.41 1.41" />
-        <path d="M2 12h2" />
-        <path d="M20 12h2" />
-        <path d="m6.34 17.66-1.41 1.41" />
-        <path d="m19.07 4.93-1.41 1.41" />
-      </svg>
-    </button>
+    <>
+      <GitHubStarButton />
+
+      <button
+        onClick={() => setIsSettingsOpen(true)}
+        /* frost-control owns the surface, border, radius, transition and focus
+           ring — the previous bg/border utilities would have overridden it. */
+        className="frost-control inline-flex h-8 w-8 items-center justify-center text-fg-muted hover:text-fg-secondary"
+        title="Session settings"
+        aria-label="Open settings"
+      >
+        <Settings2 className="h-4 w-4" aria-hidden="true" />
+      </button>
+    </>
   );
 
   return (
@@ -522,6 +557,10 @@ export default function App() {
               onClose={() => setIsSettingsOpen(false)}
               theme={theme}
               onThemeChange={handleThemeChange}
+              latencyHistory={latencyHistory}
+              serverMs={serverMs}
+              serverStats={serverStats}
+              streamSampleRate={pipeline.streamInfo?.sampleRate}
             />
           </div>
         </div>

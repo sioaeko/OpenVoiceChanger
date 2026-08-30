@@ -132,6 +132,19 @@ export async function fetchConfig() {
   return request('/config');
 }
 
+export async function fetchGitHubStarState() {
+  return request('/github/star');
+}
+
+export async function starGitHubRepository() {
+  return request('/github/star', {
+    method: 'POST',
+    headers: {
+      'X-OpenVoiceChanger-Action': 'star',
+    },
+  });
+}
+
 export async function fetchPresets() {
   return request('/presets/');
 }

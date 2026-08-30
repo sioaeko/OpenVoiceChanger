@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from backend.config import settings
-from backend.routers import convert, models, presets, websocket
+from backend.routers import convert, github_star, models, presets, websocket
 from backend.security import cors_origins
 from backend.services.model_manager import ModelManager
 from backend.services.preset_store import PresetStore
@@ -175,6 +175,8 @@ async def get_config():
         "version": app.version,
         "sample_rate": settings.SAMPLE_RATE,
         "chunk_size": settings.CHUNK_SIZE,
+        "silence_saver": websocket.DEFAULT_SILENCE_SAVER,
+        "silence_threshold_db": websocket.DEFAULT_SILENCE_THRESHOLD_DB,
         "onnx_available": _onnx_available,
         "torch_available": _torch_available,
         "runtime": {
@@ -188,6 +190,7 @@ async def get_config():
 app.include_router(models.router)
 app.include_router(presets.router)
 app.include_router(convert.router)
+app.include_router(github_star.router)
 app.include_router(websocket.router)
 
 # Mount frontend static files if the dist directory exists

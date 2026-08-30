@@ -32,7 +32,9 @@
 - 실시간 피치 **및 포먼트** 시프트, F0 방식 선택(PM / Harvest / Crepe / RMVPE / FCPE), RVC 고급 파라미터(index rate, RMS mix, protect)
 - **서버 사이드 12종 이펙트 랙**: 노이즈 게이트, 로봇, 위스퍼, 전화기, 디스토션, 비트크러시, 코러스, 에코, 리버브, 톤 EQ, 컴프레서, 출력 게인 — 모두 스트리밍 상태 유지형
 - **내장 보이스 프리셋 16종** (다람쥐, 저음, 로봇, 유령, 전화, 스타디움 등) + Voice Lab 전체 상태를 저장하는 사용자 프리셋
-- 실시간 스펙트럼 비주얼라이저, 피크 홀드 VU 미터, 레이턴시 스파크라인, 서버 처리시간 분석(모델/DSP/네트워크)
+- **Silence Saver** — 무음이 이어지면 무거운 모델 추론을 쉬게 하면서 DSP 잔향은 유지하고, 소리가 들어오는 첫 청크에서 즉시 재개
+- **실측 성능 프로필** (Responsive / Balanced / Stable) — 최근 p95 왕복 지연과 서버 처리시간으로 청크 크기 추천
+- 실시간 스펙트럼 비주얼라이저, 피크 홀드 VU 미터, 레이턴시 스파크라인, 서버 처리시간 분석(모델/DSP/네트워크), 추론 duty 모니터링
 - **출력 녹음기** — 변환된 목소리를 WAV로 저장
 
 ### 오프라인 변환
@@ -41,7 +43,8 @@
 ### 관리
 - 드래그 앤 드롭 모델 업로드(`.pth` / `.pt` / `.onnx` + 동반 `.index` 파일), 한 번에 하나의 모델 활성화
 - 모델 메타데이터 배지: RVC 버전, 타깃 샘플레이트, F0 지원, index 유무, 디바이스
-- 샘플 레이트, 청크 크기, ONNX / PyTorch / GPU / CUDA 런타임 상태를 보는 설정 모달
+- 라이트/다크 테마, 전송 성능 프로필, Silence Saver, ONNX / PyTorch / GPU / CUDA 런타임 상태를 한곳에서 관리하는 설정 모달
+- 키보드 포커스가 명확한 Lucide 아이콘 컨트롤 + 일반 저장소 링크로 자연스럽게 전환되는 명시적 GitHub Star 동작
 
 ## 스크린샷
 
@@ -78,7 +81,8 @@ RVC 변환은 실시간 스트림의 짧은 컨텍스트 창을 쓰지 않고 �
 
 ![세션 런타임 설정](docs/images/settings-modal.png)
 
-스트림 기본값과 함께 백엔드가 인식한 ONNX provider, PyTorch device, GPU, CUDA 상태를 보여줍니다.
+라이트/다크 테마, 전송 성능 프로필, 실측 추천, Silence Saver 설정과 함께 백엔드가
+인식한 ONNX provider, PyTorch device, GPU, CUDA 상태를 보여줍니다.
 
 ## 빠른 시작
 
@@ -175,17 +179,21 @@ npm run dev
 
 1. 브라우저에서 앱을 엽니다.
 2. (선택) `Models` 탭에서 모델을 업로드하고 활성화합니다 — 모델이 없으면 순수 DSP 모드로 동작합니다.
-3. `Studio` 탭에서 입력/출력 장치를 고릅니다.
-4. `Start Voice Changer`를 누릅니다.
-5. 피치, 포먼트, F0 방식, 이펙트 랙, 원클릭 프리셋으로 목소리를 실시간으로 바꿉니다.
-6. 출력을 녹음하거나 `Converter` 탭에서 파일 전체를 변환합니다.
+3. 필요하면 Settings에서 성능 프로필과 Silence Saver 임계값을 조정합니다.
+4. `Studio` 탭에서 입력/출력 장치를 고릅니다.
+5. `Start Voice Changer`를 누릅니다.
+6. 피치, 포먼트, F0 방식, 이펙트 랙, 원클릭 프리셋으로 목소리를 실시간으로 바꿉니다.
+7. <kbd>B</kbd> 키(또는 `A/B Monitor`)로 스트림을 멈추지 않고 변환음과 원음을 비교합니다.
+8. 출력을 녹음하거나 `Converter` 탭에서 파일 전체를 변환합니다.
 
 ## API
 
 | 메서드 | 엔드포인트 | 설명 |
 |--------|-----------|------|
 | `GET` | `/health` | 헬스 체크 |
-| `GET` | `/api/config` | 샘플 레이트, 청크 크기, ONNX 런타임 정보, PyTorch 런타임 정보 |
+| `GET` | `/api/config` | 스트림 및 Silence Saver 기본값, ONNX/PyTorch 런타임 정보 |
+| `GET` | `/api/github/star` | 현재 GitHub CLI 계정의 Star 상태 확인 |
+| `POST` | `/api/github/star` | 같은 기기의 브라우저에서 명시적으로 눌렀을 때 이 저장소에 Star 추가 |
 | `GET` | `/api/models/` | 업로드된 모델 목록 |
 | `POST` | `/api/models/upload` | 모델 업로드 |
 | `DELETE` | `/api/models/{name}` | 모델 삭제 |
@@ -207,8 +215,8 @@ npm run dev
 3. 바이너리 오디오 프레임 전송: `[uint32 seq_num][uint32 reserved][float32[] PCM samples]`
 4. 같은 형식으로 처리된 오디오 프레임 수신 — 응답의 `reserved` 필드에 서버 처리시간(1/100 ms 단위)이 담깁니다
 5. 필요할 때 설정 전송:
-   `{"pitch_shift": 3.0, "formant_shift": -2.0, "f0_method": "rmvpe", "filter_radius": 3, "effects": {"reverb": {"enabled": true, "size": 0.6, "mix": 0.4}}}`
-6. 주기적 상태 JSON 수신: `{"type": "status", "latency_ms": …, "model_ms": …, "dsp_ms": …, "mode": "rvc|onnx|dsp|bypass", "bypass": false, "effects_active": …}`
+   `{"pitch_shift": 3.0, "formant_shift": -2.0, "f0_method": "rmvpe", "filter_radius": 3, "silence_saver": true, "silence_threshold_db": -52, "effects": {"reverb": {"enabled": true, "size": 0.6, "mix": 0.4}}}`
+6. 주기적 상태 JSON 수신: `{"type": "status", "latency_ms": …, "model_ms": …, "dsp_ms": …, "mode": "rvc|onnx|dsp|bypass", "bypass": false, "inference_sleeping": false, "inference_duty_percent": 100.0, "effects_active": …}`
 
 모든 설정 필드는 선택 사항이며 알 수 없는 필드는 무시되므로, 이 릴리스 전후의
 클라이언트와 서버가 서로 호환됩니다.
@@ -226,6 +234,29 @@ UI에서는 <kbd>B</kbd> 키로 전환할 수 있습니다.
 
 이는 이펙트 랙의 **Bypass all** 버튼과 다릅니다. 후자는 이펙트만 해제하고 모델
 변환은 계속 실행됩니다.
+
+#### 성능 프로필과 Silence Saver
+
+Settings의 **Responsive**, **Balanced**, **Stable** 프로필은 각각 2048, 4096,
+8192 샘플 청크를 사용합니다. 라이브 측정값이 8개 이상 모이면 최근 p95 왕복 지연과
+모델 + DSP 처리시간을 이용해 처리 여유가 있는 가장 작은 프로필을 추천합니다. 라우팅
+중 선택한 프로필은 다음 세션에 적용되며, 수동 샘플 레이트와 청크 크기는 라우팅을
+멈출 때까지 잠깁니다.
+
+Silence Saver는 기본적으로 `-52 dB`에서 켜지며 `-80`부터 `-20 dB`까지 조절할 수
+있습니다. 모델이 활성화된 상태에서 입력이 180 ms 동안 임계값 아래에 머물면 해당
+스트림의 모델 컨텍스트를 해제하고 추론을 건너뜁니다. 에코와 리버브 잔향이 자연스럽게
+사라지도록 무음으로 post-effect 단계는 계속 실행하고, 소리가 들어오는 첫 청크에서
+다시 깨어납니다. 모니터의 `Saver`는 현재 절전 상태, `Duty`는 모델 추론 대상 프레임 중
+실제로 추론한 비율입니다. DSP 전용 모드는 절전하지 않습니다.
+
+#### GitHub Star 버튼
+
+헤더 버튼은 이 저장소에 대한 한 가지 동작만 투명하게 수행합니다. 루프백 브라우저에서
+사용자가 직접 누르면 현재 인증된 GitHub CLI(`gh`) 계정으로
+`sioaeko/OpenVoiceChanger`에 Star를 추가하며, 인증 정보는 프론트엔드로 전달되지
+않습니다. `gh`가 없거나 인증되지 않았거나 연결할 수 없거나 다른 기기에서 접속한 경우,
+버튼은 사용자가 GitHub에서 직접 결정할 수 있는 일반 저장소 링크로 바뀝니다.
 
 ## 설정
 

@@ -35,6 +35,8 @@ class TestHealthAndConfig:
         body = client.get("/api/config").json()
         assert body["sample_rate"] > 0
         assert body["chunk_size"] > 0
+        assert body["silence_saver"] is True
+        assert -80 <= body["silence_threshold_db"] <= -20
         assert "runtime" in body
 
 

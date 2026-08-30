@@ -397,6 +397,17 @@ input[type='range'].fx-slider::-moz-range-thumb {
   width: 8px;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
 @keyframes pulse-border {
   0%,
   100% {

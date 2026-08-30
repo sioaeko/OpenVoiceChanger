@@ -3,10 +3,12 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 // constants.js derives WS_URL from `location` at module scope, which Node does
 // not provide — stub it before the module graph is evaluated.
 let convertFile;
+let fetchGitHubStarState;
+let starGitHubRepository;
 
 beforeAll(async () => {
   globalThis.location = { protocol: 'http:', host: 'localhost:8000' };
-  ({ convertFile } = await import('./api'));
+  ({ convertFile, fetchGitHubStarState, starGitHubRepository } = await import('./api'));
 });
 
 function mockFetch() {
@@ -116,5 +118,29 @@ describe('convertFile', () => {
     }));
 
     await expect(convertFile(FILE, {})).rejects.toThrow('Audio too long (max 10 minutes)');
+  });
+});
+
+describe('GitHub star API', () => {
+  it('reads the active account star state', async () => {
+    globalThis.fetch = vi.fn(async () => ({
+      ok: true,
+      text: async () => JSON.stringify({ available: true, starred: false }),
+    }));
+
+    await expect(fetchGitHubStarState()).resolves.toEqual({ available: true, starred: false });
+    expect(globalThis.fetch.mock.calls[0][0]).toBe('/api/github/star');
+  });
+
+  it('posts an explicit user-action header when starring', async () => {
+    globalThis.fetch = vi.fn(async () => ({
+      ok: true,
+      text: async () => JSON.stringify({ available: true, starred: true }),
+    }));
+
+    await expect(starGitHubRepository()).resolves.toEqual({ available: true, starred: true });
+    const [, options] = globalThis.fetch.mock.calls[0];
+    expect(options.method).toBe('POST');
+    expect(options.headers['X-OpenVoiceChanger-Action']).toBe('star');
   });
 });

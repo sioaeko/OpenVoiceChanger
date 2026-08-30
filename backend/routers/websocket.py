@@ -1,7 +1,10 @@
 import asyncio
 import json
 import logging
+import math
 import time
+
+import numpy as np
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
@@ -20,6 +23,11 @@ MIN_SAMPLE_RATE = 8000
 MAX_SAMPLE_RATE = 192000
 MIN_CHUNK_SIZE = 128
 MAX_CHUNK_SIZE = 65536
+MIN_SILENCE_THRESHOLD_DB = -80.0
+MAX_SILENCE_THRESHOLD_DB = -20.0
+DEFAULT_SILENCE_THRESHOLD_DB = -52.0
+DEFAULT_SILENCE_SAVER = True
+SILENCE_HOLD_MS = 180.0
 
 
 def _bounded_int(value, minimum: int, maximum: int) -> int | None:
@@ -29,6 +37,24 @@ def _bounded_int(value, minimum: int, maximum: int) -> int | None:
     except (TypeError, ValueError, OverflowError):
         return None
     return parsed if minimum <= parsed <= maximum else None
+
+
+def _bounded_float(value, minimum: float, maximum: float) -> float | None:
+    """Return a finite float inside the protocol range, or ``None``."""
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return parsed if math.isfinite(parsed) and minimum <= parsed <= maximum else None
+
+
+def _optional_bool(value) -> bool | None:
+    """Parse the JSON boolean forms accepted by live settings updates."""
+    if isinstance(value, bool):
+        return value
+    if value in (0, 1):
+        return bool(value)
+    return None
 
 
 @router.websocket("/ws/audio")
@@ -85,6 +111,15 @@ async def audio_websocket(websocket: WebSocket) -> None:
         # Full conversion bypass for A/B monitoring: routing stays live, the
         # signal returns untouched. Distinct from clearing the effect rack.
         "bypass": False,
+        # Skip expensive model inference only after sustained near-silence.
+        # The post-effect stage keeps running so reverb and echo tails decay.
+        "silence_saver": DEFAULT_SILENCE_SAVER,
+        "silence_threshold_db": DEFAULT_SILENCE_THRESHOLD_DB,
+        "silence_ms": 0.0,
+        "inference_sleeping": False,
+        "sleep_stream_released": False,
+        "status_model_eligible_frames": 0,
+        "status_model_inference_frames": 0,
         "chain": None,
         "configured": False,
         "last_status_time": time.perf_counter(),
@@ -219,6 +254,42 @@ def _apply_settings(data: dict, conn_state: dict) -> None:
     except (TypeError, ValueError) as exc:
         logger.warning("Ignoring invalid settings values: %s", exc)
 
+    if "silence_saver" in data:
+        enabled = _optional_bool(data["silence_saver"])
+        if enabled is None:
+            logger.warning("Ignoring invalid silence_saver value %r", data["silence_saver"])
+        else:
+            conn_state["silence_saver"] = enabled
+            if not enabled:
+                conn_state["silence_ms"] = 0.0
+                conn_state["inference_sleeping"] = False
+                conn_state["sleep_stream_released"] = False
+
+    if "silence_threshold_db" in data:
+        threshold = _bounded_float(
+            data["silence_threshold_db"],
+            MIN_SILENCE_THRESHOLD_DB,
+            MAX_SILENCE_THRESHOLD_DB,
+        )
+        if threshold is None:
+            logger.warning(
+                "Ignoring invalid silence_threshold_db value %r (expected %.0f-%.0f)",
+                data["silence_threshold_db"],
+                MIN_SILENCE_THRESHOLD_DB,
+                MAX_SILENCE_THRESHOLD_DB,
+            )
+        else:
+            conn_state["silence_threshold_db"] = threshold
+
+
+def _is_below_silence_threshold(audio, threshold_db: float) -> bool:
+    """Return whether a chunk's RMS level is below the configured threshold."""
+    if len(audio) == 0:
+        return True
+    rms = math.sqrt(float(np.mean(np.square(audio, dtype=np.float64))))
+    threshold = 10.0 ** (threshold_db / 20.0)
+    return rms <= threshold
+
 
 def _process_frame_sync(audio, model_manager, conn_state: dict) -> tuple:
     """Full processing path for one chunk. Runs inside a worker thread.
@@ -235,6 +306,7 @@ def _process_frame_sync(audio, model_manager, conn_state: dict) -> tuple:
     un-bypassing, which is preferable to discarding the stream's context.
     """
     if conn_state.get("bypass"):
+        conn_state["inference_sleeping"] = False
         return audio, "bypass", 0.0, 0.0
 
     chain = conn_state["chain"]
@@ -246,27 +318,69 @@ def _process_frame_sync(audio, model_manager, conn_state: dict) -> tuple:
 
     model_ms = 0.0
     mode = "dsp"
-    t_model = time.perf_counter()
-    try:
-        processed = model_manager.process_audio(
+    active = model_manager.get_active_model()
+    sleeping = False
+
+    if active and conn_state.get("silence_saver", DEFAULT_SILENCE_SAVER):
+        chunk_ms = len(processed) * 1000.0 / max(float(conn_state["sample_rate"]), 1.0)
+        if _is_below_silence_threshold(
             processed,
-            {
-                "stream_id": conn_state["stream_id"],
-                "pitch_shift": pitch_shift,
-                "f0_method": conn_state["f0_method"],
-                "sample_rate": conn_state["sample_rate"],
-                "index_rate": conn_state["index_rate"],
-                "filter_radius": conn_state["filter_radius"],
-                "rms_mix_rate": conn_state["rms_mix_rate"],
-                "protect": conn_state["protect"],
-            },
+            float(conn_state.get("silence_threshold_db", DEFAULT_SILENCE_THRESHOLD_DB)),
+        ):
+            conn_state["silence_ms"] = conn_state.get("silence_ms", 0.0) + chunk_ms
+        else:
+            conn_state["silence_ms"] = 0.0
+            conn_state["sleep_stream_released"] = False
+
+        sleeping = conn_state["silence_ms"] >= SILENCE_HOLD_MS
+    else:
+        conn_state["silence_ms"] = 0.0
+        conn_state["sleep_stream_released"] = False
+
+    if active:
+        conn_state["status_model_eligible_frames"] = (
+            conn_state.get("status_model_eligible_frames", 0) + 1
         )
-        model_ms = (time.perf_counter() - t_model) * 1000.0
-        active = model_manager.get_active_model()
-        mode = (active or {}).get("type", "model")
-    except RuntimeError:
-        # No active model — DSP passthrough handles pitch instead.
-        processed = chain.apply_pitch(processed, pitch_shift)
+        mode = active.get("type", "model")
+
+    if sleeping:
+        if not conn_state.get("sleep_stream_released"):
+            model_manager.release_stream(conn_state["stream_id"])
+            conn_state["sleep_stream_released"] = True
+        # Keep the post-effect stage alive so time-based tails decay naturally.
+        processed = np.zeros_like(processed)
+    else:
+        t_model = time.perf_counter()
+        try:
+            processed = model_manager.process_audio(
+                processed,
+                {
+                    "stream_id": conn_state["stream_id"],
+                    "pitch_shift": pitch_shift,
+                    "f0_method": conn_state["f0_method"],
+                    "sample_rate": conn_state["sample_rate"],
+                    "index_rate": conn_state["index_rate"],
+                    "filter_radius": conn_state["filter_radius"],
+                    "rms_mix_rate": conn_state["rms_mix_rate"],
+                    "protect": conn_state["protect"],
+                },
+            )
+            model_ms = (time.perf_counter() - t_model) * 1000.0
+            if active:
+                conn_state["status_model_inference_frames"] = (
+                    conn_state.get("status_model_inference_frames", 0) + 1
+                )
+        except RuntimeError:
+            # No active model — DSP passthrough handles pitch instead.
+            active = None
+            mode = "dsp"
+            conn_state["status_model_eligible_frames"] = max(
+                conn_state.get("status_model_eligible_frames", 0) - 1,
+                0,
+            )
+            processed = chain.apply_pitch(processed, pitch_shift)
+
+    conn_state["inference_sleeping"] = sleeping and bool(active)
 
     processed = chain.post_process(processed, effects, conn_state["formant_shift"])
 
@@ -350,6 +464,13 @@ async def _send_status(websocket: WebSocket, model_manager, conn_state: dict) ->
         mode = "bypass"
     else:
         mode = conn_state["mode"] if active else "dsp"
+    eligible_frames = conn_state.get("status_model_eligible_frames", 0)
+    inference_frames = conn_state.get("status_model_inference_frames", 0)
+    inference_duty = (
+        round(inference_frames * 100.0 / eligible_frames, 1)
+        if eligible_frames > 0
+        else 0.0
+    )
     status = {
         "type": "status",
         "latency_ms": round(conn_state["latency_ms"], 2),
@@ -358,6 +479,14 @@ async def _send_status(websocket: WebSocket, model_manager, conn_state: dict) ->
         "mode": mode,
         "bypass": bypassed,
         "active_model": active["name"] if active else None,
+        "silence_saver": bool(conn_state.get("silence_saver", DEFAULT_SILENCE_SAVER)),
+        "silence_threshold_db": float(
+            conn_state.get("silence_threshold_db", DEFAULT_SILENCE_THRESHOLD_DB)
+        ),
+        "inference_sleeping": bool(
+            active and not bypassed and conn_state.get("inference_sleeping")
+        ),
+        "inference_duty_percent": inference_duty if active and not bypassed else 0.0,
         # Nothing is applied while bypassed, so report what is actually running
         # rather than what the rack is configured to do.
         "effects_active": 0
@@ -370,3 +499,6 @@ async def _send_status(websocket: WebSocket, model_manager, conn_state: dict) ->
         await websocket.send_json(status)
     except Exception:
         pass
+    finally:
+        conn_state["status_model_eligible_frames"] = 0
+        conn_state["status_model_inference_frames"] = 0

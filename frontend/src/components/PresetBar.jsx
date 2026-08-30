@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { LoaderCircle, Plus, Trash2, X } from 'lucide-react';
 import { fetchPresets, savePreset, deletePreset } from '../lib/api';
 
 function PresetChip({ preset, active, onApply, onDelete }) {
@@ -29,9 +30,10 @@ function PresetChip({ preset, active, onApply, onDelete }) {
             onDelete(preset);
           }}
           title="Delete preset"
-          className="absolute -right-1.5 -top-1.5 hidden h-4 w-4 items-center justify-center rounded-sm border border-danger-line-strong bg-panel text-[9px] text-danger-fg group-hover:flex"
+          aria-label={`Delete ${preset.name} preset`}
+          className="absolute -right-2 -top-2 inline-flex h-6 w-6 items-center justify-center rounded border border-danger-line-strong bg-panel text-danger-fg opacity-0 shadow-sm transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus:opacity-100"
         >
-          ✕
+          <Trash2 className="h-3 w-3" aria-hidden="true" />
         </button>
       )}
     </div>
@@ -109,18 +111,25 @@ export default function PresetBar({ activePresetId, onApplyPreset, getCurrentSet
                 placeholder="Preset name"
                 maxLength={40}
                 autoFocus
-                className="w-40 rounded border border-line-hover bg-input px-3 py-1.5 text-sm text-fg outline-none placeholder:text-fg-faint focus:border-line-hover"
+                className="w-40 rounded border border-line-hover bg-input px-3 py-1.5 text-sm text-fg placeholder:text-fg-faint focus:border-line-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--frost-focus)]"
               />
-              <button onClick={handleSave} disabled={saving || !saveName.trim()} className="chip-button">
-                {saving ? '...' : 'Save'}
+              <button onClick={handleSave} disabled={saving || !saveName.trim()} className="chip-button inline-flex items-center gap-1.5">
+                {saving ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : null}
+                Save
               </button>
-              <button onClick={() => setShowSave(false)} className="chip-button !px-2.5">
-                ✕
+              <button
+                onClick={() => setShowSave(false)}
+                className="chip-button inline-flex h-8 w-8 items-center justify-center !p-0"
+                aria-label="Cancel preset save"
+                title="Cancel"
+              >
+                <X className="h-3.5 w-3.5" aria-hidden="true" />
               </button>
             </div>
           ) : (
-            <button onClick={() => setShowSave(true)} className="chip-button">
-              + Save current
+            <button onClick={() => setShowSave(true)} className="chip-button inline-flex items-center gap-1.5">
+              <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+              Save current
             </button>
           )}
         </div>

@@ -1,4 +1,5 @@
 import React, { useRef, useState } from 'react';
+import { AudioLines, Download, FileAudio, LoaderCircle } from 'lucide-react';
 import { convertFile } from '../lib/api';
 import { countActiveEffects } from '../lib/effects';
 
@@ -81,6 +82,9 @@ export default function FileConverter({ voice, effects, activeModel }) {
       </p>
 
       <div
+        role="button"
+        tabIndex={0}
+        aria-label="Choose an audio file to convert"
         onDrop={(event) => {
           event.preventDefault();
           setDragActive(false);
@@ -95,6 +99,11 @@ export default function FileConverter({ voice, effects, activeModel }) {
           setDragActive(false);
         }}
         onClick={() => fileInputRef.current?.click()}
+        onKeyDown={(event) => {
+          if (event.key !== 'Enter' && event.key !== ' ') return;
+          event.preventDefault();
+          fileInputRef.current?.click();
+        }}
         className={`mt-5 cursor-pointer rounded-md border border-dashed p-8 text-center transition-all duration-200 ${
           dragActive
             ? 'border-line-hover bg-control-hover drag-active'
@@ -111,11 +120,7 @@ export default function FileConverter({ voice, effects, activeModel }) {
           }}
           className="hidden"
         />
-        <svg className="mx-auto mb-3 h-9 w-9 text-fg-subtle" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M9 18V5l12-2v13" />
-          <circle cx="6" cy="18" r="3" />
-          <circle cx="18" cy="16" r="3" />
-        </svg>
+        <FileAudio className="mx-auto mb-3 h-9 w-9 text-fg-subtle" strokeWidth={1.5} aria-hidden="true" />
         {file ? (
           <>
             <p className="text-sm font-medium text-fg">{file.name}</p>
@@ -151,18 +156,18 @@ export default function FileConverter({ voice, effects, activeModel }) {
         <button
           onClick={handleConvert}
           disabled={!file || converting}
-          className="rounded-md bg-primary px-6 py-3 text-sm font-bold uppercase tracking-[0.14em] text-primary-fg transition hover:bg-primary-hover disabled:cursor-not-allowed disabled:bg-control-hover disabled:text-fg-subtle"
+          className="inline-flex items-center justify-center gap-2 rounded-md bg-primary px-6 py-3 text-sm font-bold uppercase tracking-[0.14em] text-primary-fg transition hover:bg-primary-hover disabled:cursor-not-allowed disabled:bg-control-hover disabled:text-fg-subtle"
         >
           {converting ? (
-            <span className="flex items-center gap-2">
-              <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-              </svg>
+            <>
+              <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
               Converting…
-            </span>
+            </>
           ) : (
-            'Convert'
+            <>
+              <AudioLines className="h-4 w-4" aria-hidden="true" />
+              Convert
+            </>
           )}
         </button>
       </div>
@@ -185,8 +190,9 @@ export default function FileConverter({ voice, effects, activeModel }) {
             <p className="text-sm font-medium text-ok-fg">
               {result.name} <span className="text-xs text-ok-fg-soft">({formatSize(result.size)})</span>
             </p>
-            <a href={result.url} download={result.name} className="chip-button !normal-case">
-              ↓ Download WAV
+            <a href={result.url} download={result.name} className="chip-button inline-flex items-center gap-1.5 !normal-case">
+              <Download className="h-3.5 w-3.5" aria-hidden="true" />
+              Download WAV
             </a>
           </div>
           <audio controls src={result.url} className="mt-3 h-9 w-full" />

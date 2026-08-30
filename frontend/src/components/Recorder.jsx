@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react';
+import { Circle, Download, Square, Trash2 } from 'lucide-react';
 import { formatRecordLimit } from '../lib/recording';
 
 function formatDuration(seconds) {
@@ -54,19 +55,21 @@ export default function Recorder({ pipeline }) {
             </span>
             <button
               onClick={() => pipeline.stopRecording()}
-              className="rounded border border-danger-line-strong bg-danger-bg px-4 py-2 text-[11px] font-bold uppercase tracking-[0.14em] text-danger-fg transition hover:bg-danger-bg-strong"
+              className="inline-flex items-center gap-2 rounded border border-danger-line-strong bg-danger-bg px-4 py-2 text-[11px] font-bold uppercase tracking-[0.14em] text-danger-fg transition hover:bg-danger-bg-strong"
             >
-              ■ Stop
+              <Square className="h-3 w-3 fill-current" aria-hidden="true" />
+              Stop
             </button>
           </div>
         ) : (
           <button
             onClick={() => pipeline.startRecording()}
             disabled={!isRunning}
-            className="rounded border border-danger-line bg-danger-bg px-4 py-2 text-[11px] font-bold uppercase tracking-[0.14em] text-danger-fg transition hover:bg-danger-bg-strong disabled:cursor-not-allowed disabled:border-line-strong disabled:bg-control disabled:text-fg-faint"
+            className="inline-flex items-center gap-2 rounded border border-danger-line bg-danger-bg px-4 py-2 text-[11px] font-bold uppercase tracking-[0.14em] text-danger-fg transition hover:bg-danger-bg-strong disabled:cursor-not-allowed disabled:border-line-strong disabled:bg-control disabled:text-fg-faint"
             title={isRunning ? 'Record the converted output' : 'Start routing first'}
           >
-            ● Record
+            <Circle className="h-3 w-3 fill-current" aria-hidden="true" />
+            Record
           </button>
         )}
       </div>
@@ -95,12 +98,18 @@ export default function Recorder({ pipeline }) {
               <a
                 href={lastRecording.url}
                 download={`voice-take-${Date.now()}.wav`}
-                className="chip-button !normal-case"
+                className="chip-button inline-flex items-center gap-1.5 !normal-case"
               >
-                ↓ Download WAV
+                <Download className="h-3.5 w-3.5" aria-hidden="true" />
+                Download WAV
               </a>
-              <button onClick={() => pipeline.discardRecording()} className="chip-button !px-2.5">
-                ✕
+              <button
+                onClick={() => pipeline.discardRecording()}
+                className="chip-button inline-flex h-8 w-8 items-center justify-center !p-0"
+                aria-label="Discard recording"
+                title="Discard recording"
+              >
+                <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
               </button>
             </div>
           </div>

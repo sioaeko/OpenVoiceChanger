@@ -32,7 +32,9 @@
 - Live pitch **and formant** shifting, F0 method selection (PM / Harvest / Crepe / RMVPE / FCPE), and RVC advanced controls (index rate, RMS mix, protect)
 - **12-effect server-side DSP rack**: noise gate, robot, whisper, telephone, distortion, bitcrush, chorus, echo, reverb, tone EQ, compressor, output gain — all streaming-safe with per-connection state
 - **16 built-in voice presets** (Chipmunk, Deep Voice, Robot, Ghost, Telephone, Stadium, …) plus custom presets that save the complete Voice Lab state
-- Real-time spectrum visualizer, VU meters with peak hold, latency sparkline, and a server timing breakdown (model / DSP / network)
+- **Silence Saver** pauses expensive model inference after quiet input while keeping DSP tails alive, then resumes on the first audible chunk
+- **Measured performance profiles** (Responsive / Balanced / Stable) recommend a chunk size from recent p95 round-trip and server processing time
+- Real-time spectrum visualizer, VU meters with peak hold, latency sparkline, server timing breakdown (model / DSP / network), and live inference duty monitoring
 - **Output recorder** — capture the converted voice and download it as WAV
 
 ### Offline converter
@@ -41,7 +43,8 @@
 ### Management
 - Drag-and-drop model upload (`.pth` / `.pt` / `.onnx` + companion `.index` files), one active model at a time
 - Model metadata badges: RVC version, target sample rate, F0 support, index presence, device
-- Session settings modal for sample rate, chunk size, and ONNX / PyTorch / GPU / CUDA runtime visibility
+- Session settings for light/dark theme, transport profiles, Silence Saver, and ONNX / PyTorch / GPU / CUDA runtime visibility
+- Consistent Lucide controls with keyboard-visible focus states, plus an explicit GitHub Star action with a normal repository-link fallback
 
 ## Screenshots
 
@@ -79,7 +82,8 @@ and Protect values rather than using the realtime stream's short context window.
 
 ![Session runtime settings](docs/images/settings-modal.png)
 
-Stream defaults plus a live view of what the backend sees: ONNX provider, PyTorch device, GPU, and CUDA.
+Light/dark theme, transport profiles, a measured recommendation, Silence Saver controls,
+and a live view of what the backend sees: ONNX provider, PyTorch device, GPU, and CUDA.
 
 ## Quick Start
 
@@ -176,18 +180,21 @@ Then open `http://127.0.0.1:5173`.
 
 1. Open the app in your browser.
 2. (Optional) Upload and activate a model in the `Models` tab — without one, the studio runs in pure DSP mode.
-3. Pick your input and output devices in the `Studio` tab.
-4. Click `Start Voice Changer`.
-5. Shape the voice live: pitch, formant, F0 method, effect rack, or a one-click preset.
-6. Press <kbd>B</kbd> (or the `A/B Monitor` toggle) to compare the converted voice against your raw input without stopping the stream.
-7. Record the output, or render whole files in the `Converter` tab.
+3. Open Settings to choose a performance profile and tune Silence Saver if needed.
+4. Pick your input and output devices in the `Studio` tab.
+5. Click `Start Voice Changer`.
+6. Shape the voice live: pitch, formant, F0 method, effect rack, or a one-click preset.
+7. Press <kbd>B</kbd> (or the `A/B Monitor` toggle) to compare the converted voice against your raw input without stopping the stream.
+8. Record the output, or render whole files in the `Converter` tab.
 
 ## API
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `GET` | `/health` | Health check |
-| `GET` | `/api/config` | Sample rate, chunk size, ONNX runtime info, PyTorch runtime info |
+| `GET` | `/api/config` | Stream defaults, Silence Saver defaults, ONNX runtime info, PyTorch runtime info |
+| `GET` | `/api/github/star` | Check the active GitHub CLI account's star state |
+| `POST` | `/api/github/star` | Star this repository after an explicit same-device browser action |
 | `GET` | `/api/models/` | List uploaded models |
 | `POST` | `/api/models/upload` | Upload a model file |
 | `DELETE` | `/api/models/{name}` | Delete a model |
@@ -214,8 +221,8 @@ Interactive docs are available at `/docs` while the backend is running.
 3. Send binary audio frames: `[uint32 seq_num][uint32 reserved][float32[] PCM samples]`
 4. Receive processed audio frames in the same format — the response `reserved` field carries the server processing time in hundredths of a millisecond
 5. Send settings updates such as
-   `{"pitch_shift": 3.0, "formant_shift": -2.0, "f0_method": "rmvpe", "filter_radius": 3, "effects": {"reverb": {"enabled": true, "size": 0.6, "mix": 0.4}}}`
-6. Receive periodic status JSON: `{"type": "status", "latency_ms": …, "model_ms": …, "dsp_ms": …, "mode": "rvc|onnx|dsp|bypass", "bypass": false, "effects_active": …}`
+   `{"pitch_shift": 3.0, "formant_shift": -2.0, "f0_method": "rmvpe", "filter_radius": 3, "silence_saver": true, "silence_threshold_db": -52, "effects": {"reverb": {"enabled": true, "size": 0.6, "mix": 0.4}}}`
+6. Receive periodic status JSON: `{"type": "status", "latency_ms": …, "model_ms": …, "dsp_ms": …, "mode": "rvc|onnx|dsp|bypass", "bypass": false, "inference_sleeping": false, "inference_duty_percent": 100.0, "effects_active": …}`
 
 All settings fields are optional and unknown fields are ignored, so older and
 newer clients interoperate with either side of this release.
@@ -233,6 +240,32 @@ which only clears the effects and leaves model conversion running.
 Bypass is not persisted between sessions, and no artificial delay is added to
 match converted-path latency — the architecture has no timing primitive that
 would make such compensation reliable, so the raw path is simply faster.
+
+#### Performance profiles and Silence Saver
+
+The Settings modal maps **Responsive**, **Balanced**, and **Stable** to 2048,
+4096, and 8192-sample chunks. After at least eight live samples, the UI uses the
+recent p95 round-trip latency and model + DSP processing time to recommend the
+smallest profile with processing headroom. A profile selected while routing is
+queued for the next session; manual sample-rate and chunk-size fields remain
+locked until routing stops.
+
+Silence Saver is enabled by default at `-52 dB` and can be tuned from `-80` to
+`-20 dB`. When a model is active and input stays below the threshold for 180 ms,
+the server releases that stream's model context and skips inference. It still
+runs the post-effect stage with silence so echo and reverb tails decay normally,
+then wakes on the first audible chunk. The monitor exposes the current `Saver`
+state and the percentage of model-eligible frames that actually ran inference as
+`Duty`. DSP-only mode is never put to sleep.
+
+#### GitHub Star button
+
+The header control performs one transparent action for this fixed repository.
+From a loopback browser, an explicit click can use the active, authenticated
+GitHub CLI (`gh`) account to star `sioaeko/OpenVoiceChanger`; the credential never
+enters the frontend. If `gh` is missing, unauthenticated, unreachable, or the UI
+is opened from another device, the control becomes a normal link to the GitHub
+repository so the user can decide there.
 
 ## Configuration
 

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { ChevronDown, RotateCcw } from 'lucide-react';
 
 const F0_METHODS = [
   { value: 'pm', label: 'PM', description: 'Lowest latency' },
@@ -20,9 +21,11 @@ function BigSlider({ label, value, min, max, step, unit, onChange, onReset }) {
           <button
             onClick={onReset}
             disabled={value === 0}
-            className="chip-button !px-2.5 !py-1"
+            className="chip-button inline-flex h-7 w-7 items-center justify-center !p-0"
+            aria-label={`Reset ${label}`}
+            title={`Reset ${label}`}
           >
-            ⟲
+            <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
           </button>
         </div>
       </div>
@@ -141,16 +144,10 @@ export default function VoiceLab({ voice, onChange, hasModel, isRunning }) {
           className="flex w-full items-center justify-between text-[10px] font-semibold uppercase tracking-[0.18em] text-fg-subtle transition hover:text-fg-secondary"
         >
           RVC Advanced
-          <svg
+          <ChevronDown
             className={`h-3.5 w-3.5 transition-transform ${showAdvanced ? 'rotate-180' : ''}`}
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-          >
-            <polyline points="6 9 12 15 18 9" />
-          </svg>
+            aria-hidden="true"
+          />
         </button>
 
         {showAdvanced && (

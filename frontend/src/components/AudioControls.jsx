@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { LoaderCircle, Pause, Play, RefreshCw } from 'lucide-react';
 
 export default function AudioControls({
   devices,
@@ -52,8 +53,9 @@ export default function AudioControls({
           <button
             onClick={() => devices.refresh?.().catch(() => {})}
             disabled={pipeline.isRunning || devices.isRefreshing}
-            className="chip-button"
+            className="chip-button inline-flex items-center gap-1.5"
           >
+            <RefreshCw className={`h-3.5 w-3.5 ${devices.isRefreshing ? 'animate-spin' : ''}`} aria-hidden="true" />
             {devices.isRefreshing ? 'Refreshing…' : 'Refresh'}
           </button>
         </div>
@@ -68,7 +70,7 @@ export default function AudioControls({
             value={selectedInput}
             onChange={(event) => setSelectedInput(event.target.value)}
             disabled={pipeline.isRunning}
-            className="native-select-safe mt-2 w-full rounded-md border border-line bg-input px-3 py-2.5 text-sm text-fg outline-none transition focus:border-line-hover disabled:cursor-not-allowed disabled:opacity-50"
+            className="native-select-safe mt-2 w-full rounded-md border border-line bg-input px-3 py-2.5 text-sm text-fg transition focus:border-line-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--frost-focus)] disabled:cursor-not-allowed disabled:opacity-50"
           >
             <option value="">Default Microphone</option>
             {devices.inputDevices.map((device) => (
@@ -92,7 +94,7 @@ export default function AudioControls({
                 ? undefined
                 : 'This browser cannot route Web Audio to a specific device.'
             }
-            className="native-select-safe mt-2 w-full rounded-md border border-line bg-input px-3 py-2.5 text-sm text-fg outline-none transition focus:border-line-hover disabled:cursor-not-allowed disabled:opacity-50"
+            className="native-select-safe mt-2 w-full rounded-md border border-line bg-input px-3 py-2.5 text-sm text-fg transition focus:border-line-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--frost-focus)] disabled:cursor-not-allowed disabled:opacity-50"
           >
             {/* Without setSinkId the browser always plays to the system default,
                 so offering a device list here would be a promise we can't keep. */}
@@ -164,17 +166,12 @@ export default function AudioControls({
           >
             {starting ? (
               <span className="flex items-center justify-center gap-2">
-                <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                </svg>
+                <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
                 Starting…
               </span>
             ) : (
               <span className="flex items-center justify-center gap-2">
-                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
-                  <polygon points="5 3 19 12 5 21 5 3" />
-                </svg>
+                <Play className="h-4 w-4 fill-current" aria-hidden="true" />
                 Start Voice Changer
               </span>
             )}
@@ -185,10 +182,7 @@ export default function AudioControls({
             className="w-full rounded-md border border-danger-line-strong bg-danger-bg px-5 py-3 text-sm font-bold uppercase tracking-[0.14em] text-danger-fg transition hover:bg-danger-bg-strong"
           >
             <span className="flex items-center justify-center gap-2">
-              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
-                <rect x="6" y="4" width="4" height="16" />
-                <rect x="14" y="4" width="4" height="16" />
-              </svg>
+              <Pause className="h-4 w-4 fill-current" aria-hidden="true" />
               Stop
             </span>
           </button>

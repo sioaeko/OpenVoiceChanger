@@ -1,32 +1,34 @@
 import React, { useMemo } from 'react';
+import {
+  Activity,
+  AudioLines,
+  Gauge,
+  Moon,
+  ShieldCheck,
+  Sun,
+  X,
+  Zap,
+} from 'lucide-react';
+import {
+  PERFORMANCE_PROFILES,
+  bufferDurationMs,
+  profileForChunkSize,
+  recommendPerformanceProfile,
+} from '../lib/performance';
 
 const SAMPLE_RATE_OPTIONS = [32000, 40000, 44100, 48000];
 const CHUNK_SIZE_OPTIONS = [1024, 2048, 4096, 8192];
 
-const SunIcon = (props) => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" {...props}>
-    <circle cx="12" cy="12" r="4" />
-    <path d="M12 2v2" />
-    <path d="M12 20v2" />
-    <path d="m4.93 4.93 1.41 1.41" />
-    <path d="m17.66 17.66 1.41 1.41" />
-    <path d="M2 12h2" />
-    <path d="M20 12h2" />
-    <path d="m6.34 17.66-1.41 1.41" />
-    <path d="m19.07 4.93-1.41 1.41" />
-  </svg>
-);
-
-const MoonIcon = (props) => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
-    <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
-  </svg>
-);
-
 const THEME_OPTIONS = [
-  { value: 'light', label: 'Light', Icon: SunIcon },
-  { value: 'dark', label: 'Dark', Icon: MoonIcon },
+  { value: 'light', label: 'Light', Icon: Sun },
+  { value: 'dark', label: 'Dark', Icon: Moon },
 ];
+
+const PROFILE_ICONS = {
+  responsive: Zap,
+  balanced: Gauge,
+  stable: ShieldCheck,
+};
 
 /**
  * Light/Dark picker.
@@ -91,6 +93,27 @@ function ThemePicker({ theme, onThemeChange }) {
   );
 }
 
+function Toggle({ checked, onChange, label }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      onClick={() => onChange?.(!checked)}
+      className={`relative h-6 w-11 flex-shrink-0 rounded border transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--frost-focus)] ${
+        checked ? 'border-ok-line-strong bg-ok-bg-strong' : 'border-line-strong bg-input'
+      }`}
+    >
+      <span
+        className={`absolute top-1/2 h-4 w-4 -translate-y-1/2 rounded-[3px] transition-[left,background-color] duration-150 ${
+          checked ? 'left-[calc(100%-19px)] bg-ok-solid' : 'left-[3px] bg-fg-faint'
+        }`}
+      />
+    </button>
+  );
+}
+
 function uniqueSorted(values) {
   return [...new Set(values.filter((value) => Number.isFinite(value) && value > 0))].sort((a, b) => a - b);
 }
@@ -131,7 +154,18 @@ function RuntimeItem({ label, value, detail }) {
   );
 }
 
-export default function GlobalSettings({ config, onChange, disabled, onClose, theme, onThemeChange }) {
+export default function GlobalSettings({
+  config,
+  onChange,
+  disabled,
+  onClose,
+  theme,
+  onThemeChange,
+  latencyHistory = [],
+  serverMs = 0,
+  serverStats = {},
+  streamSampleRate = null,
+}) {
   const sampleRateOptions = useMemo(
     () => uniqueSorted([config.sampleRate, ...SAMPLE_RATE_OPTIONS]),
     [config.sampleRate]
@@ -148,6 +182,21 @@ export default function GlobalSettings({ config, onChange, disabled, onClose, th
   const cudaVersion = config.runtime?.torch?.cudaVersion || 'Not detected';
   const onnxGpuReady = Boolean(config.runtime?.onnx?.gpuEnabled);
   const torchGpuReady = Boolean(config.runtime?.torch?.cudaAvailable);
+  const measuredSampleRate = streamSampleRate || config.sampleRate;
+  const activeProfile = profileForChunkSize(config.chunkSize);
+  const recommendation = useMemo(
+    () => recommendPerformanceProfile({
+      latencyHistory,
+      sampleRate: measuredSampleRate,
+      serverMs,
+      serverStats,
+      isRunning: disabled,
+    }),
+    [disabled, latencyHistory, measuredSampleRate, serverMs, serverStats]
+  );
+  const recommendationApplied = recommendation.ready
+    && recommendation.profile.chunkSize === config.chunkSize;
+  const inferenceDuty = Math.max(0, Math.min(100, Math.round(serverStats.inferenceDutyPercent || 0)));
 
   return (
     <section className="rounded-lg border border-line-strong bg-overlay p-6 shadow-[0_32px_120px_var(--overlay-shadow)] backdrop-blur-2xl sm:p-7">
@@ -172,10 +221,7 @@ export default function GlobalSettings({ config, onChange, disabled, onClose, th
             className="frost-control inline-flex h-10 w-10 items-center justify-center text-fg-muted hover:text-fg-secondary"
             aria-label="Close settings"
           >
-            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M18 6 6 18" />
-              <path d="m6 6 12 12" />
-            </svg>
+            <X className="h-4 w-4" aria-hidden="true" />
           </button>
         ) : null}
       </div>
@@ -187,8 +233,88 @@ export default function GlobalSettings({ config, onChange, disabled, onClose, th
               Stream Defaults
             </p>
             <p className="text-sm text-fg-muted">
-              Applied to the next routing session. Stop routing before changing these values.
+              Manual transport fields lock while live; profiles can queue for the next session.
             </p>
+          </div>
+
+          <div className="mt-5">
+            <div className="flex items-end justify-between gap-3">
+              <div>
+                <p className="text-xs font-medium uppercase tracking-[0.2em] text-fg-subtle">
+                  Performance profile
+                </p>
+                <p className="mt-1 font-mono text-[11px] tabular-nums text-fg-faint">
+                  {activeProfile.label} · {Math.round(bufferDurationMs(config.chunkSize, measuredSampleRate))} ms buffer
+                </p>
+              </div>
+              {streamSampleRate ? (
+                <span className="font-mono text-[11px] tabular-nums text-fg-faint">
+                  {streamSampleRate.toLocaleString()} Hz live
+                </span>
+              ) : null}
+            </div>
+
+            <div className="mt-3 grid grid-cols-3 gap-0.5 rounded-md border border-[color:var(--frost-border)] bg-sunken p-0.5">
+              {PERFORMANCE_PROFILES.map((profile) => {
+                const Icon = PROFILE_ICONS[profile.id];
+                const selected = activeProfile.id === profile.id;
+                return (
+                  <button
+                    key={profile.id}
+                    type="button"
+                    aria-pressed={selected}
+                    data-selected={selected}
+                    onClick={() => onChange?.({ chunkSize: profile.chunkSize })}
+                    className={`flex min-h-[72px] min-w-0 flex-col items-center justify-center gap-1 rounded border px-1 py-2 text-center transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-45 ${
+                      selected
+                        ? 'frost-control text-fg'
+                        : 'border-transparent text-fg-subtle hover:text-fg-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--frost-focus)]'
+                    }`}
+                  >
+                    <Icon className="h-4 w-4 flex-shrink-0" aria-hidden="true" />
+                    <span className="max-w-full text-[11px] font-semibold uppercase tracking-[0.08em]">
+                      {profile.label}
+                    </span>
+                    <span className="font-mono text-[11px] tabular-nums text-fg-faint">
+                      {profile.chunkSize.toLocaleString()}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="mt-4 flex flex-col gap-3 border-l-2 border-line-strong pl-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <Activity className="h-4 w-4 flex-shrink-0 text-fg-subtle" aria-hidden="true" />
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-fg-subtle">
+                    Measured recommendation
+                  </p>
+                </div>
+                {recommendation.ready ? (
+                  <p className="mt-1 text-sm font-medium text-fg-secondary">
+                    {recommendation.profile.label}
+                    <span className="ml-2 font-mono text-[11px] font-normal tabular-nums text-fg-faint">
+                      p95 {Math.round(recommendation.p95Ms)} ms · process {Math.round(recommendation.processingMs)} ms
+                    </span>
+                  </p>
+                ) : (
+                  <p className="mt-1 text-xs text-fg-faint">
+                    {serverStats.inferenceSleeping ? 'Waiting for active voice' : 'Collecting live routing samples'}
+                  </p>
+                )}
+              </div>
+              {recommendation.ready ? (
+                <button
+                  type="button"
+                  disabled={recommendationApplied}
+                  onClick={() => onChange?.({ chunkSize: recommendation.profile.chunkSize })}
+                  className="chip-button flex-shrink-0 disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  {recommendationApplied ? 'Applied' : 'Apply'}
+                </button>
+              ) : null}
+            </div>
           </div>
 
           <div className="mt-5 grid gap-5 sm:grid-cols-2">
@@ -200,7 +326,7 @@ export default function GlobalSettings({ config, onChange, disabled, onClose, th
                 value={config.sampleRate}
                 onChange={(event) => onChange?.({ sampleRate: Number(event.target.value) })}
                 disabled={disabled}
-                className="native-select-safe mt-3 w-full rounded-md border border-line-strong bg-raised px-4 py-3 text-sm text-fg outline-none transition focus:border-line-hover focus:bg-control disabled:cursor-not-allowed disabled:opacity-50"
+                className="native-select-safe mt-3 w-full rounded-md border border-line-strong bg-raised px-4 py-3 text-sm text-fg transition focus:border-line-hover focus:bg-control focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--frost-focus)] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {sampleRateOptions.map((value) => (
                   <option key={value} value={value}>
@@ -218,7 +344,7 @@ export default function GlobalSettings({ config, onChange, disabled, onClose, th
                 value={config.chunkSize}
                 onChange={(event) => onChange?.({ chunkSize: Number(event.target.value) })}
                 disabled={disabled}
-                className="native-select-safe mt-3 w-full rounded-md border border-line-strong bg-raised px-4 py-3 text-sm text-fg outline-none transition focus:border-line-hover focus:bg-control disabled:cursor-not-allowed disabled:opacity-50"
+                className="native-select-safe mt-3 w-full rounded-md border border-line-strong bg-raised px-4 py-3 text-sm text-fg transition focus:border-line-hover focus:bg-control focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--frost-focus)] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {chunkSizeOptions.map((value) => (
                   <option key={value} value={value}>
@@ -231,9 +357,71 @@ export default function GlobalSettings({ config, onChange, disabled, onClose, th
 
           <p className="mt-5 text-xs uppercase tracking-[0.18em] text-fg-subtle">
             {disabled
-              ? 'Routing is active. Stop the stream to edit global defaults.'
+              ? 'Routing is active. Profiles queue for the next session; manual transport fields are locked.'
               : 'Saved locally and synced to the server before the next stream starts.'}
           </p>
+
+          <div className="mt-6 border-t border-line-strong pt-5">
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex min-w-0 items-center gap-3">
+                <AudioLines className="h-5 w-5 flex-shrink-0 text-fg-subtle" aria-hidden="true" />
+                <div className="min-w-0">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-fg-subtle">
+                    Silence Saver
+                  </p>
+                  <p className="mt-1 text-sm font-medium text-fg-secondary">
+                    Model inference gate
+                  </p>
+                </div>
+              </div>
+              <Toggle
+                checked={config.silenceSaver}
+                onChange={(silenceSaver) => onChange?.({ silenceSaver })}
+                label="Toggle Silence Saver"
+              />
+            </div>
+
+            <div className={`mt-4 transition-opacity duration-150 ${config.silenceSaver ? '' : 'opacity-45'}`}>
+              <div className="flex items-center justify-between gap-3">
+                <label htmlFor="silence-threshold" className="text-xs font-medium uppercase tracking-[0.16em] text-fg-subtle">
+                  Sleep threshold
+                </label>
+                <output htmlFor="silence-threshold" className="font-mono text-xs tabular-nums text-fg-secondary">
+                  {config.silenceThresholdDb} dB
+                </output>
+              </div>
+              <input
+                id="silence-threshold"
+                type="range"
+                min="-80"
+                max="-20"
+                step="1"
+                value={config.silenceThresholdDb}
+                disabled={!config.silenceSaver}
+                onChange={(event) => onChange?.({ silenceThresholdDb: Number(event.target.value) })}
+                className="fx-slider mt-2 w-full disabled:cursor-not-allowed"
+                aria-valuetext={`${config.silenceThresholdDb} decibels`}
+              />
+            </div>
+
+            <div className="mt-3 flex items-center justify-between gap-3 border-t border-line pt-3">
+              <span className={`text-[11px] font-semibold uppercase tracking-[0.14em] ${
+                serverStats.inferenceSleeping ? 'text-ok-fg' : 'text-fg-faint'
+              }`}
+              >
+                {!config.silenceSaver
+                  ? 'Off'
+                  : serverStats.inferenceSleeping
+                    ? 'Inference sleeping'
+                    : serverStats.activeModel
+                      ? 'Listening'
+                      : 'Armed'}
+              </span>
+              <span className="font-mono text-[11px] tabular-nums text-fg-faint">
+                {serverStats.activeModel ? `${inferenceDuty}% inference duty` : 'Model inactive'}
+              </span>
+            </div>
+          </div>
 
           <div className="mt-6 border-t border-line-strong pt-5">
             <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-fg-subtle">

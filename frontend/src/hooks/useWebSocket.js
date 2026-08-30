@@ -16,6 +16,10 @@ export default function useWebSocket() {
     activeModel: null,
     effectsActive: 0,
     bypass: false,
+    silenceSaver: true,
+    silenceThresholdDb: -52,
+    inferenceSleeping: false,
+    inferenceDutyPercent: 0,
   });
 
   const wsRef = useRef(null);
@@ -164,6 +168,10 @@ export default function useWebSocket() {
               effectsActive: msg.effects_active ?? 0,
               // Older backends omit this; absence means "not bypassed".
               bypass: Boolean(msg.bypass),
+              silenceSaver: msg.silence_saver !== false,
+              silenceThresholdDb: msg.silence_threshold_db ?? -52,
+              inferenceSleeping: Boolean(msg.inference_sleeping),
+              inferenceDutyPercent: msg.inference_duty_percent ?? 0,
             });
           }
           onSettingsResponseRef.current?.(msg);

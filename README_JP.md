@@ -32,7 +32,9 @@
 - リアルタイムのピッチ **とフォルマント** シフト、F0 方式選択（PM / Harvest / Crepe / RMVPE / FCPE）、RVC 詳細パラメータ（index rate、RMS mix、protect）
 - **サーバーサイド 12 種エフェクトラック**: ノイズゲート、ロボット、ウィスパー、電話、ディストーション、ビットクラッシュ、コーラス、エコー、リバーブ、トーン EQ、コンプレッサー、出力ゲイン
 - **内蔵ボイスプリセット 16 種**（チップマンク、ディープボイス、ロボット、ゴーストなど）+ Voice Lab の全状態を保存するユーザープリセット
-- リアルタイムスペクトラムビジュアライザー、ピークホールド付き VU メーター、レイテンシスパークライン、サーバー処理時間の内訳（モデル / DSP / ネットワーク）
+- **Silence Saver** — 無音が続く間は重いモデル推論を休止しつつ DSP の残響を維持し、音声が戻った最初のチャンクで再開
+- **計測ベースのパフォーマンスプロファイル**（Responsive / Balanced / Stable）— 直近の p95 往復レイテンシとサーバー処理時間からチャンクサイズを推奨
+- リアルタイムスペクトラムビジュアライザー、ピークホールド付き VU メーター、レイテンシスパークライン、サーバー処理時間の内訳（モデル / DSP / ネットワーク）、推論 duty モニタリング
 - **出力レコーダー** — 変換後の声を WAV でダウンロード
 
 ### オフライン変換
@@ -41,7 +43,8 @@
 ### 管理
 - ドラッグ & ドロップのモデルアップロード（`.pth` / `.pt` / `.onnx` + 付随する `.index`）、同時にアクティブなモデルは 1 つ
 - モデルメタデータバッジ: RVC バージョン、ターゲットサンプルレート、F0 対応、index 有無、デバイス
-- サンプルレート、チャンクサイズ、ONNX / PyTorch / GPU / CUDA 状態を確認できる設定モーダル
+- ライト / ダークテーマ、転送プロファイル、Silence Saver、ONNX / PyTorch / GPU / CUDA 状態をまとめた設定モーダル
+- キーボードフォーカスが明確な Lucide アイコン操作 + 通常のリポジトリリンクへ自然に切り替わる明示的な GitHub Star 操作
 
 ## スクリーンショット
 
@@ -79,7 +82,8 @@ RVC 変換はリアルタイムストリームの短いコンテキスト窓を�
 
 ![セッションランタイム設定](docs/images/settings-modal.png)
 
-ストリームのデフォルト設定に加えて、バックエンドが認識している ONNX provider、PyTorch device、GPU、CUDA の状態を表示します。
+ライト / ダークテーマ、転送プロファイル、計測ベースの推奨、Silence Saver 設定に加え、
+バックエンドが認識している ONNX provider、PyTorch device、GPU、CUDA の状態を表示します。
 
 ## クイックスタート
 
@@ -176,17 +180,21 @@ npm run dev
 
 1. ブラウザでアプリを開く
 2. （任意）`Models` タブでモデルをアップロードしてアクティベートする — モデルがなければ純粋な DSP モードで動作します
-3. `Studio` タブで入力 / 出力デバイスを選ぶ
-4. `Start Voice Changer` を押す
-5. ピッチ、フォルマント、F0 方式、エフェクトラック、ワンクリックプリセットで声をリアルタイムに変える
-6. 出力を録音するか、`Converter` タブでファイル全体を変換する
+3. 必要に応じて Settings でパフォーマンスプロファイルと Silence Saver のしきい値を調整する
+4. `Studio` タブで入力 / 出力デバイスを選ぶ
+5. `Start Voice Changer` を押す
+6. ピッチ、フォルマント、F0 方式、エフェクトラック、ワンクリックプリセットで声をリアルタイムに変える
+7. <kbd>B</kbd> キー（または `A/B Monitor`）でストリームを止めずに変換音と原音を比較する
+8. 出力を録音するか、`Converter` タブでファイル全体を変換する
 
 ## API
 
 | メソッド | エンドポイント | 説明 |
 |----------|----------------|------|
 | `GET` | `/health` | ヘルスチェック |
-| `GET` | `/api/config` | サンプルレート、チャンクサイズ、ONNX ランタイム情報、PyTorch ランタイム情報 |
+| `GET` | `/api/config` | ストリームと Silence Saver のデフォルト、ONNX / PyTorch ランタイム情報 |
+| `GET` | `/api/github/star` | 現在の GitHub CLI アカウントの Star 状態を確認 |
+| `POST` | `/api/github/star` | 同じ端末のブラウザで明示的に押した場合、このリポジトリに Star を追加 |
 | `GET` | `/api/models/` | アップロード済みモデル一覧 |
 | `POST` | `/api/models/upload` | モデルアップロード |
 | `DELETE` | `/api/models/{name}` | モデル削除 |
@@ -208,8 +216,8 @@ npm run dev
 3. バイナリオーディオフレームを送信: `[uint32 seq_num][uint32 reserved][float32[] PCM samples]`
 4. 同じ形式で処理済みオーディオフレームを受信 — レスポンスの `reserved` フィールドにサーバー処理時間（1/100 ms 単位）が入ります
 5. 必要に応じて設定を送信:
-   `{"pitch_shift": 3.0, "formant_shift": -2.0, "f0_method": "rmvpe", "filter_radius": 3, "effects": {"reverb": {"enabled": true, "size": 0.6, "mix": 0.4}}}`
-6. 定期的なステータス JSON を受信: `{"type": "status", "latency_ms": …, "model_ms": …, "dsp_ms": …, "mode": "rvc|onnx|dsp|bypass", "bypass": false, "effects_active": …}`
+   `{"pitch_shift": 3.0, "formant_shift": -2.0, "f0_method": "rmvpe", "filter_radius": 3, "silence_saver": true, "silence_threshold_db": -52, "effects": {"reverb": {"enabled": true, "size": 0.6, "mix": 0.4}}}`
+6. 定期的なステータス JSON を受信: `{"type": "status", "latency_ms": …, "model_ms": …, "dsp_ms": …, "mode": "rvc|onnx|dsp|bypass", "bypass": false, "inference_sleeping": false, "inference_duty_percent": 100.0, "effects_active": …}`
 
 設定フィールドはすべて任意で、未知のフィールドは無視されるため、本リリースの
 前後どちらのクライアント／サーバーとも相互運用できます。
@@ -227,6 +235,29 @@ npm run dev
 
 これはエフェクトラックの **Bypass all** ボタンとは別物です。後者はエフェクトを
 解除するだけで、モデル変換は動作し続けます。
+
+#### パフォーマンスプロファイルと Silence Saver
+
+Settings の **Responsive**、**Balanced**、**Stable** は、それぞれ 2048、4096、
+8192 サンプルのチャンクを使います。ライブ測定が 8 件以上集まると、直近の p95
+往復レイテンシとモデル + DSP 処理時間から、処理余裕を確保できる最小のプロファイルを
+推奨します。ルーティング中に選んだプロファイルは次のセッションに適用され、手動の
+サンプルレートとチャンクサイズはルーティング停止までロックされます。
+
+Silence Saver はデフォルトで `-52 dB` にて有効で、`-80` から `-20 dB` まで調整
+できます。モデルが有効な状態で入力が 180 ms しきい値を下回ると、そのストリームの
+モデルコンテキストを解放して推論をスキップします。エコーとリバーブの残響が自然に
+減衰するよう無音で post-effect 段は継続し、音声が戻った最初のチャンクで再開します。
+モニターの `Saver` は現在の休止状態、`Duty` はモデル推論対象フレームのうち実際に
+推論した割合です。DSP のみのモードは休止しません。
+
+#### GitHub Star ボタン
+
+ヘッダーのボタンは、この固定リポジトリに対する一つの明示的な操作だけを行います。
+ループバックブラウザからユーザーが直接押すと、現在認証済みの GitHub CLI（`gh`）
+アカウントで `sioaeko/OpenVoiceChanger` に Star を追加し、認証情報はフロントエンドに
+渡りません。`gh` がない、未認証、接続できない、または別端末から開いている場合は、
+GitHub 上でユーザー自身が判断できる通常のリポジトリリンクに切り替わります。
 
 ## 設定
 
