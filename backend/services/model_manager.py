@@ -302,6 +302,7 @@ class ModelManager:
                 filter_radius=settings.get("filter_radius"),
                 rms_mix_rate=settings.get("rms_mix_rate"),
                 protect=settings.get("protect"),
+                crepe_hop_length=settings.get("crepe_hop_length"),
                 # Realtime callers stream chunks against a rolling context;
                 # the offline converter renders a whole file in one pass.
                 use_stream_context=bool(settings.get("use_stream_context", True)),

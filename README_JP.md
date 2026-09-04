@@ -143,7 +143,7 @@ models/assets/hubert_base.pt
 ### 5. アプリ起動
 
 ```powershell
-.venv\Scripts\python.exe -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
+.venv\Scripts\python.exe launch.py
 ```
 
 ブラウザで開く URL:
@@ -169,6 +169,20 @@ npm run dev
 
 その後 `http://127.0.0.1:5173` を開いてください。
 
+## アップデート
+
+起動時と毎時間、公式 GitHub の公開リリースを確認します。現在より新しい安定版 (`vMAJOR.MINOR.PATCH`) があるときだけ、ヘッダーに **Update available** ボタンが表示されます。下書き、プレリリース、通常のコミットは対象外です。設定からの手動確認は1分に1回までです。同意なしにインストールすることはありません。
+
+**Update and restart** には `python launch.py` での起動、Git、公式の `origin`、変更のない `main` ブランチが必要です。ランチャーはビルド済みフロントエンドを取得し、GitHub の SHA-256 とファイル別マニフェストを検証してから、検証済みリリースコミットへ fast-forward して再起動します。GitHub ログイン、ローカル Node.js ビルド、pip インストール、CUDA の変更は行いません。Python 依存関係が変わるリリースは手動更新が必要です。ZIP ソースや `uvicorn` 直接起動では通知のみ利用できます。
+
+- 音声ルーティングを停止してから更新します。アップロード、ファイル変換、直前の音声処理中はサーバー側でも更新を拒否します。
+- 最後の録音をダウンロードして消去し、変換結果もダウンロードしてから再起動します。他のタブは自動で再読み込みしません。
+- モデル、`data/presets.json`、ブラウザに保存した設定は保持します。新しいサーバーが起動しない場合は以前のコードと画面を復元します。途中でローカルコードが変更された場合、上書きせず復旧を停止します。
+- 復旧用ファイルは `tmp/updater/jobs/` に残ります。復旧に失敗した場合は、チェックアウトを変更する前に `tmp/updater/state.json` とランチャーログを確認してください。
+- `OVC_UPDATE_CHECK_ENABLED=false` でバックグラウンド確認を無効にできます。手動確認は引き続き可能です。CORS を開放してもインストールは同じ端末からのみ許可されます。
+
+配布時は `VERSION` とフロントエンドの2つのパッケージバージョンを更新して `main` にコミットし、対応する `vX.Y.Z` タグを push します。Release ワークフローがテストとビルドを実行し、`OpenVoiceChanger-frontend-vX.Y.Z.zip` とチェックサムを下書きにアップロードした後で公開します。`python scripts/package_release.py` はクリーンなビルド済みチェックアウトをパッケージ化するだけで、公開はしません。最初のリリースで配布経路が整い、インストール済みのアプリは自身より新しいバージョンだけを通知します。
+
 ## モデルサポート
 
 | 形式 | エンジン | 備考 |
@@ -193,6 +207,9 @@ npm run dev
 |----------|----------------|------|
 | `GET` | `/health` | ヘルスチェック |
 | `GET` | `/api/config` | ストリームと Silence Saver のデフォルト、ONNX / PyTorch ランタイム情報 |
+| `GET` | `/api/updates` | キャッシュ済みリリース状態、現在のバージョン、更新の進行状況 |
+| `POST` | `/api/updates/check` | 明示的なローカル更新確認 (頻度制限あり) |
+| `POST` | `/api/updates/install` | 検証済みバージョンの更新と再起動を予約 (管理ランチャーのみ) |
 | `GET` | `/api/github/star` | 現在の GitHub CLI アカウントの Star 状態を確認 |
 | `POST` | `/api/github/star` | 同じ端末のブラウザで明示的に押した場合、このリポジトリに Star を追加 |
 | `GET` | `/api/models/` | アップロード済みモデル一覧 |
@@ -282,6 +299,7 @@ GitHub 上でユーザー自身が判断できる通常のリポジトリリン�
 | `OVC_RVC_ALLOW_UNSAFE_CHECKPOINTS` | `false` | 安全な読み込みに失敗したチェックポイントの unpickle を許可（[セキュリティ](#セキュリティ)参照） |
 | `OVC_PRESETS_PATH` | `data/presets.json` | ユーザープリセット保存ファイル |
 | `OVC_MAX_CONVERT_SECONDS` | `600` | オフライン変換の最大オーディオ長 |
+| `OVC_UPDATE_CHECK_ENABLED` | `true` | 起動時と毎時間の公開リリース確認。クリックせずにインストールしない |
 | `OVC_RVC_PROTECT` | `0.33` | 子音保護値 |
 
 `OVC_RVC_STREAM_CONTEXT_SECONDS` はバッファサイズではなくレイテンシと品質の

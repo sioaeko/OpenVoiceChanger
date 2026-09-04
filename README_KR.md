@@ -142,7 +142,7 @@ models/assets/hubert_base.pt
 ### 5. 앱 실행
 
 ```powershell
-.venv\Scripts\python.exe -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
+.venv\Scripts\python.exe launch.py
 ```
 
 브라우저에서 여세요:
@@ -168,6 +168,20 @@ npm run dev
 
 그 다음 `http://127.0.0.1:5173`로 접속하면 됩니다.
 
+## 업데이트
+
+시작할 때와 매시간 공식 GitHub의 공개 릴리스를 확인합니다. 현재 버전보다 높은 안정 버전(`vMAJOR.MINOR.PATCH`)이 있을 때만 헤더에 **Update available** 버튼이 나타납니다. 초안, 사전 릴리스, 일반 커밋은 알림 대상이 아닙니다. 설정에서 수동 확인도 가능하며, 요청은 분당 1회로 제한됩니다. 사용자 동의 없이 설치하지 않습니다.
+
+**Update and restart**는 `python launch.py` 실행, Git 설치, 공식 `origin`, 수정 사항이 없는 `main` 브랜치가 필요합니다. 런처가 미리 빌드된 프론트엔드를 다운로드하고 GitHub의 SHA-256 및 파일별 매니페스트를 검증한 뒤, 검증한 릴리스 커밋으로 fast-forward하고 서버를 재시작합니다. GitHub 로그인, 로컬 Node.js 빌드, pip 설치, CUDA 교체는 하지 않습니다. Python 의존성이 바뀐 릴리스는 수동 업데이트가 필요합니다. ZIP 소스 설치나 `uvicorn` 직접 실행에서는 알림만 지원합니다.
+
+- 설치 전 음성 라우팅을 중지해야 합니다. 서버도 업로드, 파일 변환, 최근 오디오 처리 중에는 설치를 차단합니다.
+- 마지막 녹음은 다운로드한 뒤 지우고, 변환 결과도 다운로드해야 재시작할 수 있습니다. 다른 열린 탭은 자동 새로고침하지 않습니다.
+- 모델, `data/presets.json`, 브라우저에 저장된 설정은 유지됩니다. 새 서버가 시작되지 않으면 이전 코드와 화면을 복원합니다. 도중에 로컬 코드가 수정되면 덮어쓰지 않고 복구를 중단합니다.
+- 복구 파일은 `tmp/updater/jobs/`에 남습니다. 복구에 실패하면 저장소를 변경하기 전에 `tmp/updater/state.json`과 런처 로그를 확인하세요.
+- `OVC_UPDATE_CHECK_ENABLED=false`로 백그라운드 GitHub 확인을 끌 수 있으며 수동 확인은 계속 가능합니다. CORS를 개방해도 설치는 같은 컴퓨터에서만 허용됩니다.
+
+배포자는 `VERSION`과 프론트엔드의 두 패키지 버전을 함께 올려 `main`에 커밋한 뒤 같은 `vX.Y.Z` 태그를 푸시합니다. Release 워크플로가 테스트와 빌드를 수행하고 `OpenVoiceChanger-frontend-vX.Y.Z.zip` 및 체크섬을 초안에 업로드한 다음 공개합니다. `python scripts/package_release.py`는 깨끗한 빌드 완료 저장소에서 패키지만 만들며 게시하지 않습니다. 첫 릴리스부터 이 배포 경로가 준비되며, 설치된 앱에는 자신의 버전보다 높은 릴리스만 표시됩니다.
+
 ## 모델 지원
 
 | 형식 | 엔진 | 비고 |
@@ -192,6 +206,9 @@ npm run dev
 |--------|-----------|------|
 | `GET` | `/health` | 헬스 체크 |
 | `GET` | `/api/config` | 스트림 및 Silence Saver 기본값, ONNX/PyTorch 런타임 정보 |
+| `GET` | `/api/updates` | 캐시된 릴리스 상태, 현재 버전, 설치 진행 단계 |
+| `POST` | `/api/updates/check` | 명시적인 로컬 업데이트 확인 (호출 횟수 제한) |
+| `POST` | `/api/updates/install` | 검증된 버전의 설치와 재시작 예약 (관리 런처 전용) |
 | `GET` | `/api/github/star` | 현재 GitHub CLI 계정의 Star 상태 확인 |
 | `POST` | `/api/github/star` | 같은 기기의 브라우저에서 명시적으로 눌렀을 때 이 저장소에 Star 추가 |
 | `GET` | `/api/models/` | 업로드된 모델 목록 |
@@ -282,6 +299,7 @@ Silence Saver는 기본적으로 `-52 dB`에서 켜지며 `-80`부터 `-20 dB`�
 | `OVC_RVC_ALLOW_UNSAFE_CHECKPOINTS` | `false` | 안전 로딩에 실패한 체크포인트의 unpickle 허용 ([보안](#보안) 참조) |
 | `OVC_PRESETS_PATH` | `data/presets.json` | 사용자 프리셋 저장 파일 |
 | `OVC_MAX_CONVERT_SECONDS` | `600` | 오프라인 변환 최대 오디오 길이 |
+| `OVC_UPDATE_CHECK_ENABLED` | `true` | 시작 시 및 매시간 공개 릴리스 확인. 클릭 없이 설치하지 않음 |
 
 `OVC_RVC_STREAM_CONTEXT_SECONDS`는 버퍼 크기가 아니라 지연 시간과 품질의
 트레이드오프입니다. 모든 청크가 이 윈도우 전체에 대해 추론되므로 값을 키우면

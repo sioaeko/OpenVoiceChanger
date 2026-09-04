@@ -2,6 +2,7 @@ import importlib
 import logging
 import os
 import threading
+from contextlib import nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -10,6 +11,8 @@ import numpy as np
 
 from backend.config import DEFAULT_F0_METHOD, settings
 from backend.services.audio_processor import resample as resample_audio
+from backend.services.f0_adapter import F0Adapter
+from backend.services.f0_registry import F0_METHOD_BY_ID, normalize_f0_method
 
 logger = logging.getLogger(__name__)
 
@@ -133,7 +136,6 @@ class RvcProcessor:
 
         self._load_model()
         self._load_hubert_model()
-        self._fcpe_supported = self._detect_fcpe_support()
 
         logger.info(
             "RVC model loaded: %s (device=%s, target_sr=%d, speakers=%d, index=%s)",
@@ -303,6 +305,7 @@ class RvcProcessor:
         net_g = net_g.eval().to(self._runtime.device)
         self._net_g = net_g.half() if self._runtime.is_half else net_g.float()
         self._pipeline = pipeline_module.Pipeline(self._target_sample_rate, self._runtime)
+        self._f0_adapter = F0Adapter(self._pipeline, self._runtime)
 
     def _load_hubert_model(self) -> None:
         checkpoint_utils, _, _ = self._runtime_modules()
@@ -328,51 +331,11 @@ class RvcProcessor:
         self._hubert_model = hubert_model.half() if self._runtime.is_half else hubert_model.float()
         self._hubert_model = self._hubert_model.eval()
 
-    def _detect_fcpe_support(self) -> bool:
-        """FCPE needs the torchfcpe package and an RVC pipeline that implements it."""
-        try:
-            import torchfcpe  # noqa: F401
-        except ImportError:
-            return False
-        try:
-            import inspect
-
-            return "fcpe" in inspect.getsource(type(self._pipeline))
-        except Exception:
-            return False
-
-    def _rmvpe_or_harvest(self) -> str:
-        rmvpe_model = self._rmvpe_root / "rmvpe.pt"
-        if rmvpe_model.exists():
-            os.environ["rmvpe_root"] = str(self._rmvpe_root)
-            return "rmvpe"
-        return "harvest"
-
-    def _normalize_f0_method(self, f0_method: str) -> str:
-        method = (f0_method or DEFAULT_F0_METHOD).lower()
-        if method == "dio":
-            logger.debug("RVC runtime does not provide dio; using pm instead")
-            return "pm"
-        if method == "fcpe":
-            if self._fcpe_supported:
-                return "fcpe"
-            fallback = self._rmvpe_or_harvest()
-            logger.warning(
-                "fcpe requested but torchfcpe or pipeline support is missing — using %s",
-                fallback,
-            )
-            return fallback
-        if method == "rmvpe":
-            fallback = self._rmvpe_or_harvest()
-            if fallback != "rmvpe":
-                logger.warning(
-                    "rmvpe requested but %s is missing — using harvest",
-                    self._rmvpe_root / "rmvpe.pt",
-                )
-            return fallback
-        if method not in {"harvest", "crepe", "pm"}:
-            logger.warning("Unsupported f0 method '%s' — using harvest", f0_method)
-            return "harvest"
+    @staticmethod
+    def _normalize_f0_method(f0_method: str, *, realtime: bool = True) -> str:
+        method = normalize_f0_method(f0_method or DEFAULT_F0_METHOD)
+        if realtime and not F0_METHOD_BY_ID[method].realtime:
+            raise ValueError(f"{F0_METHOD_BY_ID[method].label} is available for file conversion only")
         return method
 
     def _get_stream_state(self, stream_id: str) -> _StreamState:
@@ -428,6 +391,7 @@ class RvcProcessor:
         filter_radius: int | None = None,
         rms_mix_rate: float | None = None,
         protect: float | None = None,
+        crepe_hop_length: int | None = None,
         use_stream_context: bool = True,
     ) -> np.ndarray:
         """Run real RVC inference over ``audio``.
@@ -455,7 +419,7 @@ class RvcProcessor:
         if sample_rate <= 0:
             raise ValueError(f"Invalid sample rate: {sample_rate}")
 
-        method = self._normalize_f0_method(f0_method)
+        method = self._normalize_f0_method(f0_method, realtime=use_stream_context)
         stream_key = str(stream_id) if stream_id is not None else "__default__"
         resolved_index_rate = self._index_rate if index_rate is None else float(np.clip(index_rate, 0.0, 1.0))
         resolved_filter_radius = self._filter_radius if filter_radius is None else max(0, int(filter_radius))
@@ -481,26 +445,32 @@ class RvcProcessor:
             input_audio_key = f"stream-{stream_key}-{self._call_counter}"
             self._call_counter += 1
 
+            adapter = getattr(self, "_f0_adapter", None)
+            adapter_mode = adapter.mode(
+                realtime=use_stream_context,
+                crepe_hop_length=crepe_hop_length,
+            ) if adapter else nullcontext()
             try:
-                output_i16 = self._pipeline.pipeline(
-                    self._hubert_model,
-                    self._net_g,
-                    self._speaker_id,
-                    audio_for_inference,
-                    input_audio_key,
-                    times,
-                    pitch_shift,
-                    method,
-                    str(self._index_path) if self._index_path else None,
-                    resolved_index_rate if self._index_path else 0.0,
-                    self._if_f0,
-                    resolved_filter_radius,
-                    self._target_sample_rate,
-                    resample_sr,
-                    resolved_rms_mix_rate,
-                    self._version,
-                    resolved_protect,
-                )
+                with adapter_mode:
+                    output_i16 = self._pipeline.pipeline(
+                        self._hubert_model,
+                        self._net_g,
+                        self._speaker_id,
+                        audio_for_inference,
+                        input_audio_key,
+                        times,
+                        pitch_shift,
+                        method,
+                        str(self._index_path) if self._index_path else None,
+                        resolved_index_rate if self._index_path else 0.0,
+                        self._if_f0,
+                        resolved_filter_radius,
+                        self._target_sample_rate,
+                        resample_sr,
+                        resolved_rms_mix_rate,
+                        self._version,
+                        resolved_protect,
+                    )
             except Exception as exc:
                 raise RuntimeError(f"RVC inference failed: {exc}") from exc
             finally:
@@ -545,6 +515,10 @@ class RvcProcessor:
             self._hubert_model = None
             self._net_g = None
             self._pipeline = None
+            adapter = getattr(self, "_f0_adapter", None)
+            if adapter is not None:
+                adapter.close()
+            self._f0_adapter = None
 
             if self._torch is None:
                 return
@@ -558,6 +532,9 @@ class RvcProcessor:
             "version": self._version,
             "target_sample_rate": self._target_sample_rate,
             "f0": bool(self._if_f0),
+            "f0_methods": [method for method, info in getattr(
+                getattr(self, "_f0_adapter", None), "capabilities", {}
+            ).items() if info.get("available")],
             "speakers": self._speaker_count,
             "index": self._index_path.name if self._index_path else None,
             "device": self._runtime.device,

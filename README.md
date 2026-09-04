@@ -143,7 +143,7 @@ You can override that path with `OVC_HUBERT_PATH`.
 ### 5. Start the app
 
 ```powershell
-.venv\Scripts\python.exe -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
+.venv\Scripts\python.exe launch.py
 ```
 
 Open:
@@ -169,6 +169,20 @@ npm run dev
 
 Then open `http://127.0.0.1:5173`.
 
+## Updates
+
+The studio checks the official public GitHub Release on startup and every hour. A quiet **Update available** button appears in the header only when a newer stable `vMAJOR.MINOR.PATCH` release exists. Drafts, prereleases and ordinary commits do not trigger it. Settings also has a manual check (at most once per minute). Nothing installs automatically.
+
+**Update and restart** requires `python launch.py`, Git, the official `origin`, and a clean `main` branch. The launcher downloads the release's prebuilt frontend, verifies the GitHub SHA-256 digest and per-file manifest, fast-forwards to the verified release commit, and restarts the server. No GitHub login, Node.js build, pip install or CUDA change is involved. Updates that change Python dependency files require a manual update. A ZIP source download or direct `uvicorn` launch supports notifications, but not in-app installation.
+
+- Stop audio routing before installing. Uploads, conversions and recent audio frames block installation on the server as well.
+- Download and clear the last recording, and download unsaved converter output before restarting. Other open tabs are not automatically reloaded.
+- Models, `data/presets.json` and browser-saved settings are kept. A failed startup restores the previous source and frontend; concurrent local edits stop recovery instead of being overwritten.
+- Recovery files remain in `tmp/updater/jobs/`. If recovery needs attention, inspect `tmp/updater/state.json` and the launcher log before changing the checkout.
+- Set `OVC_UPDATE_CHECK_ENABLED=false` to disable background GitHub checks. Manual checks still work. Installation is restricted to the same computer, even with permissive CORS settings.
+
+For maintainers: update `VERSION` and both frontend package versions together, commit to `main`, then push the matching `vX.Y.Z` tag. The Release workflow runs tests, builds `OpenVoiceChanger-frontend-vX.Y.Z.zip` plus its checksum, uploads them to a draft, and only then publishes it. `python scripts/package_release.py` packages a clean, already-built checkout without publishing. The first release enables this distribution path; an installed copy only offers releases with a higher version.
+
 ## Model Support
 
 | Format | Engine | Notes |
@@ -193,6 +207,9 @@ Then open `http://127.0.0.1:5173`.
 |--------|----------|-------------|
 | `GET` | `/health` | Health check |
 | `GET` | `/api/config` | Stream defaults, Silence Saver defaults, ONNX runtime info, PyTorch runtime info |
+| `GET` | `/api/updates` | Cached release status, current version and installation progress |
+| `POST` | `/api/updates/check` | Explicit, rate-limited local update check |
+| `POST` | `/api/updates/install` | Queue a verified version for installation and restart (managed launcher only) |
 | `GET` | `/api/github/star` | Check the active GitHub CLI account's star state |
 | `POST` | `/api/github/star` | Star this repository after an explicit same-device browser action |
 | `GET` | `/api/models/` | List uploaded models |
@@ -291,6 +308,7 @@ Environment variables use the `OVC_` prefix.
 | `OVC_RVC_ALLOW_UNSAFE_CHECKPOINTS` | `false` | Permit unpickling checkpoints that fail safe loading (see [Security](#security)) |
 | `OVC_PRESETS_PATH` | `data/presets.json` | User preset storage file |
 | `OVC_MAX_CONVERT_SECONDS` | `600` | Max audio length for offline conversion |
+| `OVC_UPDATE_CHECK_ENABLED` | `true` | Check public GitHub releases on startup and hourly; never installs without a click |
 
 `OVC_RVC_STREAM_CONTEXT_SECONDS` is a latency/quality trade-off, not a buffer
 size: every chunk is inferred against this entire window, so raising it improves

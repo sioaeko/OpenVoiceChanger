@@ -60,3 +60,14 @@ jobs:
 
       - name: Run tests
         run: python -m pytest
+
+  updater-windows:
+    name: Updater (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install pytest fastapi pydantic-settings httpx uvicorn
+      - run: python -m pytest tests/test_updates.py tests/test_update_installer.py

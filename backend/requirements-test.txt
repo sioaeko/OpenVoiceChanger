@@ -21,3 +21,4 @@ pytest>=8.0.0
 # Supplies the pytest plugin behind @pytest.mark.anyio (already a FastAPI
 # transitive dependency; pinned here so the async tests cannot silently skip).
 anyio>=4.0.0
+uvicorn>=0.32.0

@@ -27,6 +27,7 @@ FULL_SETTINGS = {
     "filter_radius": 5,
     "rms_mix_rate": 0.8,
     "protect": 0.2,
+    "crepe_hop_length": 128,
 }
 
 LEGACY_SETTINGS = {
@@ -44,6 +45,7 @@ class TestNormalizePresetSettings:
         assert result["filter_radius"] == 5
         assert result["rms_mix_rate"] == pytest.approx(0.8)
         assert result["protect"] == pytest.approx(0.2)
+        assert result["crepe_hop_length"] == 128
 
     def test_preserves_the_original_three_fields(self):
         result = normalize_preset_settings(FULL_SETTINGS)
@@ -76,14 +78,17 @@ class TestNormalizePresetSettings:
             ("filter_radius", -3, 0),
             ("rms_mix_rate", 2.0, 1.0),
             ("protect", 9.0, 0.5),
+            ("crepe_hop_length", 12, 64),
+            ("crepe_hop_length", 4096, 512),
         ],
     )
     def test_values_are_clamped_to_the_supported_range(self, field, value, expected):
         result = normalize_preset_settings({field: value})
         assert result[field] == pytest.approx(expected)
 
-    def test_filter_radius_is_stored_as_an_int(self):
-        assert isinstance(normalize_preset_settings({"filter_radius": 4.7})["filter_radius"], int)
+    @pytest.mark.parametrize("field", ["filter_radius", "crepe_hop_length"])
+    def test_integer_fields_are_stored_as_ints(self, field):
+        assert isinstance(normalize_preset_settings({field: 100.7})[field], int)
 
     @pytest.mark.parametrize("value", ["", None, "abc", True, float("nan"), float("inf")])
     def test_unusable_values_are_dropped_rather_than_defaulted(self, value):

@@ -3,6 +3,7 @@ import json
 import logging
 import math
 import time
+from contextlib import nullcontext
 
 import numpy as np
 
@@ -12,6 +13,7 @@ from backend.config import DEFAULT_F0_METHOD, settings
 from backend.security import is_origin_allowed
 from backend.services.audio_processor import audio_to_bytes, bytes_to_audio
 from backend.services.dsp_effects import EffectsChain
+from backend.services.update_release import UpdateError
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +88,11 @@ async def audio_websocket(websocket: WebSocket) -> None:
         await websocket.close(code=1008, reason="Origin not allowed")
         return
 
+    updates = getattr(websocket.app.state, "updates", None)
+    if updates and updates.activity.maintenance:
+        await websocket.close(code=1013, reason="Update in progress")
+        return
+
     await websocket.accept()
     client_id = id(websocket)
     logger.info("WebSocket connected: %s", client_id)
@@ -107,6 +114,7 @@ async def audio_websocket(websocket: WebSocket) -> None:
         "filter_radius": None,
         "rms_mix_rate": None,
         "protect": None,
+        "crepe_hop_length": settings.CREPE_HOP_LENGTH,
         "effects": {},
         # Full conversion bypass for A/B monitoring: routing stays live, the
         # signal returns untouched. Distinct from clearing the effect rack.
@@ -143,7 +151,8 @@ async def audio_websocket(websocket: WebSocket) -> None:
             message = await websocket.receive()
 
             if "bytes" in message and message["bytes"]:
-                await _handle_binary_frame(websocket, message["bytes"], model_manager, conn_state)
+                with updates.activity.work(audio=True) if updates else nullcontext():
+                    await _handle_binary_frame(websocket, message["bytes"], model_manager, conn_state)
 
                 # Send periodic status updates
                 now = time.perf_counter()
@@ -156,6 +165,8 @@ async def audio_websocket(websocket: WebSocket) -> None:
 
     except WebSocketDisconnect:
         logger.info("WebSocket disconnected: %s", client_id)
+    except UpdateError:
+        await websocket.close(code=1013, reason="Update in progress")
     except RuntimeError as exc:
         if "disconnect" in str(exc).lower():
             logger.info("WebSocket disconnected: %s", client_id)
@@ -247,6 +258,8 @@ def _apply_settings(data: dict, conn_state: dict) -> None:
             conn_state["rms_mix_rate"] = float(data["rms_mix_rate"])
         if "protect" in data and data["protect"] is not None:
             conn_state["protect"] = float(data["protect"])
+        if "crepe_hop_length" in data and data["crepe_hop_length"] is not None:
+            conn_state["crepe_hop_length"] = int(np.clip(int(data["crepe_hop_length"]), 64, 512))
         if "effects" in data and isinstance(data["effects"], dict):
             conn_state["effects"] = data["effects"]
         if "bypass" in data:

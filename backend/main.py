@@ -7,10 +7,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from backend.config import settings
-from backend.routers import convert, github_star, models, presets, websocket
+from backend.routers import convert, github_star, models, presets, updates, websocket
 from backend.security import cors_origins
 from backend.services.model_manager import ModelManager
 from backend.services.preset_store import PresetStore
+from backend.services.f0_registry import f0_capabilities
+from backend.services.update_activity import UpdateGuardMiddleware
+from backend.services.update_service import UpdateService
+from backend.version import VERSION
 
 _onnx_available = False
 _torch_available = False
@@ -117,6 +121,8 @@ async def lifespan(app: FastAPI):
     manager = ModelManager(settings.MODELS_DIR)
     app.state.model_manager = manager
     app.state.preset_store = PresetStore(settings.PRESETS_PATH)
+    app.state.updates = UpdateService(enabled=settings.UPDATE_CHECK_ENABLED)
+    await app.state.updates.start()
 
     if settings.ALLOW_ANY_ORIGIN:
         logger.warning(
@@ -136,18 +142,19 @@ async def lifespan(app: FastAPI):
         )
 
     logger.info("Backend ready — listening on %s:%d", settings.HOST, settings.PORT)
-    yield
-
-    # Shutdown
-    logger.info("Shutting down — deactivating active model")
-    manager.deactivate_model()
-    logger.info("Shutdown complete")
+    try:
+        yield
+    finally:
+        await app.state.updates.close()
+        logger.info("Shutting down — deactivating active model")
+        manager.deactivate_model()
+        logger.info("Shutdown complete")
 
 
 app = FastAPI(
     title="OpenVoiceChanger",
     description="Real-time voice changer API",
-    version="2.0.0",
+    version=VERSION,
     lifespan=lifespan,
 )
 
@@ -156,6 +163,7 @@ app = FastAPI(
 # all. Credentials are only offered to a concrete allowlist — pairing them with
 # a "*" origin is rejected by browsers anyway.
 _cors_origins = cors_origins(settings.CORS_ORIGINS, settings.ALLOW_ANY_ORIGIN)
+app.add_middleware(UpdateGuardMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
@@ -173,6 +181,7 @@ async def health_check():
 async def get_config():
     return {
         "version": app.version,
+        "update_instance": app.state.updates.instance,
         "sample_rate": settings.SAMPLE_RATE,
         "chunk_size": settings.CHUNK_SIZE,
         "silence_saver": websocket.DEFAULT_SILENCE_SAVER,
@@ -183,6 +192,7 @@ async def get_config():
             "onnx": _get_onnx_runtime_info(),
             "torch": _get_torch_runtime_info(),
         },
+        "f0_methods": f0_capabilities(),
     }
 
 
@@ -191,6 +201,7 @@ app.include_router(models.router)
 app.include_router(presets.router)
 app.include_router(convert.router)
 app.include_router(github_star.router)
+app.include_router(updates.router)
 app.include_router(websocket.router)
 
 # Mount frontend static files if the dist directory exists

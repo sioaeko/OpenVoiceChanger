@@ -1,0 +1,51 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Require a commit from main
+        run: git merge-base --is-ancestor HEAD origin/main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test and build the frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm test
+          npm run build
+      - name: Test the backend and updater
+        run: |
+          pip install -r backend/requirements-test.txt
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          python -m pytest
+      - name: Package the verified frontend
+        run: python scripts/package_release.py --check-tag "$GITHUB_REF_NAME"
+      - name: Publish after all assets are uploaded
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" tmp/releases/* --verify-tag --title "OpenVoiceChanger $GITHUB_REF_NAME" --generate-notes --draft
+          gh release edit "$GITHUB_REF_NAME" --draft=false --latest

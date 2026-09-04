@@ -11,15 +11,18 @@ Both cases must round-trip unchanged, which is why a missing field is dropped
 here rather than defaulted — the client treats absence as "leave as-is".
 """
 
+from backend.services.f0_registry import F0_METHOD_IDS
+
 # field name -> (coercion, low, high)
 ADVANCED_FIELDS: dict[str, tuple] = {
     "index_rate": (float, 0.0, 1.0),
     "filter_radius": (int, 0, 7),
     "rms_mix_rate": (float, 0.0, 1.0),
     "protect": (float, 0.0, 0.5),
+    "crepe_hop_length": (int, 64, 512),
 }
 
-F0_METHODS = ("pm", "harvest", "crepe", "rmvpe", "fcpe")
+F0_METHODS = F0_METHOD_IDS
 
 
 def _coerce_number(value, cast, low, high):

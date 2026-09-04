@@ -63,6 +63,7 @@ def _render(
     filter_radius: int | None = None,
     rms_mix_rate: float | None = None,
     protect: float | None = None,
+    crepe_hop_length: int | None = None,
 ) -> np.ndarray:
     chain = EffectsChain(sample_rate)
     processed = chain.pre_process(audio, effects)
@@ -81,6 +82,7 @@ def _render(
                     "filter_radius": filter_radius,
                     "rms_mix_rate": rms_mix_rate,
                     "protect": protect,
+                    "crepe_hop_length": crepe_hop_length,
                     # Whole-file render: the entire input must reach the model.
                     # The realtime context window would clip it to a fraction
                     # of a second and pad the rest with silence.
@@ -112,6 +114,7 @@ async def convert_file(
     filter_radius: int | None = Form(None),
     rms_mix_rate: float | None = Form(None),
     protect: float | None = Form(None),
+    crepe_hop_length: int | None = Form(None),
 ) -> Response:
     """Convert an uploaded audio file and return the rendered WAV."""
     model_manager = getattr(request.app.state, "model_manager", None)
@@ -163,6 +166,7 @@ async def convert_file(
             filter_radius,
             rms_mix_rate,
             protect,
+            crepe_hop_length,
         )
         wav_bytes = await asyncio.to_thread(_encode_wav, rendered, sample_rate)
     except Exception as exc:

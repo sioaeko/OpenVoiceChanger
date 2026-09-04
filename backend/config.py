@@ -44,6 +44,10 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "info"
     HUBERT_PATH: str = "models/assets/hubert_base.pt"
     RMVPE_ROOT: str = "models/assets/rmvpe"
+    RMVPE_ONNX_PATH: str = "models/assets/rmvpe/rmvpe.onnx"
+    CREPE_ONNX_FULL_PATH: str = "models/assets/crepe/full.onnx"
+    CREPE_ONNX_TINY_PATH: str = "models/assets/crepe/tiny.onnx"
+    CREPE_HOP_LENGTH: int = 160
     # Length of the rolling 16 kHz history each RVC stream keeps and re-runs
     # inference over. Every chunk is inferred against this whole window, so the
     # value trades conversion context against per-chunk CPU/GPU cost: 0.14 s
@@ -60,6 +64,8 @@ class Settings(BaseSettings):
     RVC_ALLOW_UNSAFE_CHECKPOINTS: bool = False
     PRESETS_PATH: str = "data/presets.json"
     MAX_CONVERT_SECONDS: int = 600
+    # Public release metadata only; installation always requires an explicit action.
+    UPDATE_CHECK_ENABLED: bool = True
 
     model_config = {
         "env_prefix": "OVC_",
