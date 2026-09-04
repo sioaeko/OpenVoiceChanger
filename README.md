@@ -29,39 +29,48 @@
 ### Realtime studio
 - Real-time voice conversion with binary WebSocket streaming and AudioWorklet
 - ONNX and RVC model support, plus a **model-free DSP mode** (pitch shifting and effects with no checkpoint loaded)
-- Live pitch **and formant** shifting, F0 method selection (PM / Harvest / Crepe / RMVPE / FCPE), and RVC advanced controls (index rate, RMS mix, protect)
+- Live pitch **and formant** shifting, **16 F0 methods** (PM / Harvest / DIO, Crepe and Mangio-Crepe, RMVPE, FCPE, their ONNX variants, and offline hybrids) — each greyed out with a reason when this machine lacks the runtime or model asset — plus RVC advanced controls (index rate, filter radius, RMS mix, protect, Crepe hop length)
 - **12-effect server-side DSP rack**: noise gate, robot, whisper, telephone, distortion, bitcrush, chorus, echo, reverb, tone EQ, compressor, output gain — all streaming-safe with per-connection state
 - **16 built-in voice presets** (Chipmunk, Deep Voice, Robot, Ghost, Telephone, Stadium, …) plus custom presets that save the complete Voice Lab state
 - **Silence Saver** pauses expensive model inference after quiet input while keeping DSP tails alive, then resumes on the first audible chunk
 - **Measured performance profiles** (Responsive / Balanced / Stable) recommend a chunk size from recent p95 round-trip and server processing time
 - Real-time spectrum visualizer, VU meters with peak hold, latency sparkline, server timing breakdown (model / DSP / network), and live inference duty monitoring
-- **Output recorder** — capture the converted voice and download it as WAV
+- **Output recorder** — capture the converted voice (<kbd>R</kbd>) and download it as a timestamped WAV; <kbd>B</kbd> flips the A/B bypass
+- Automatic reconnect with exponential back-off and a **Retry now** shortcut when the server goes away mid-session
 
 ### Offline converter
-- Upload a whole audio file (wav / mp3 / flac / ogg / m4a) and render it through the active model + current Voice Lab settings + effect chain to a downloadable WAV
+- Upload a whole audio file (wav / mp3 / flac / ogg / m4a) and render it through the active model + current Voice Lab settings + effect chain to a downloadable WAV; long renders can be cancelled midway
 
 ### Management
 - Drag-and-drop model upload (`.pth` / `.pt` / `.onnx` + companion `.index` files), one active model at a time
 - Model metadata badges: RVC version, target sample rate, F0 support, index presence, device
 - Session settings for light/dark theme, transport profiles, Silence Saver, and ONNX / PyTorch / GPU / CUDA runtime visibility
-- Consistent Lucide controls with keyboard-visible focus states, plus an explicit GitHub Star action with a normal repository-link fallback
+- In-app update check with one-click **Update and restart** through the managed launcher (see [Updates](#updates))
+- Linkable tabs (`?tab=models`, `?tab=converter`, `?settings`) that keep their state — a chosen file or an in-progress render survives switching views — with Back/Forward moving between them
+- Consistent Lucide controls with keyboard-visible focus states and a proper tablist, plus an explicit GitHub Star action with a normal repository-link fallback
 
 ## Screenshots
 
+All captures show the studio running in model-free DSP mode on a machine without the RVC
+runtime installed, which is why the F0 picker reports its methods as unavailable — that
+capability readout is exactly what a user sees before installing the inference stack.
+
 ### Studio
 
-![Studio — realtime workspace](docs/images/main-ui.png)
+![Studio — realtime workspace, streaming](docs/images/main-ui.png)
 
-The realtime workspace: live spectrum, device routing, output recorder, VU meters with a
-model / DSP / network latency breakdown, and pitch, formant, and F0 method controls.
+The realtime workspace mid-stream with the **Deep Voice** preset applied: live input and
+output spectrum, VU meters with peak hold, a 5 ms round trip with its sparkline and the
+DSP / network split, a take being recorded, and the pitch, formant and F0 method controls.
 
 ### Presets & effects rack
 
 ![Voice presets and DSP effects rack](docs/images/effects-rack.png)
 
-16 one-click voice presets and the 12-effect server-side DSP chain. Custom presets also
-remember F0, retrieval, filter, RMS, and protect controls. Everything here works with or
-without a voice model — enable an effect and it applies to the live stream instantly.
+16 one-click voice presets and the 12-effect server-side DSP chain, here with **Ghost**
+selected (whisper, echo and reverb on). Custom presets also remember F0, retrieval, filter,
+RMS, protect and Crepe hop settings. Everything here works with or without a voice model —
+enable an effect and it applies to the live stream instantly.
 
 ### Models
 
@@ -74,16 +83,21 @@ badges and one-click activation.
 
 ![Offline file converter](docs/images/converter.png)
 
-Render whole audio files through the active model and effect chain, then download the result as WAV.
-RVC renders process the complete file and honor the current Index Rate, Filter Radius, RMS Mix,
-and Protect values rather than using the realtime stream's short context window.
+Render whole audio files through the active model and effect chain, then preview and download
+the result as WAV. RVC renders process the complete file and honor the current Index Rate,
+Filter Radius, RMS Mix, and Protect values rather than using the realtime stream's short
+context window.
 
 ### Settings
 
 ![Session runtime settings](docs/images/settings-modal.png)
 
-Light/dark theme, transport profiles, a measured recommendation, Silence Saver controls,
-and a live view of what the backend sees: ONNX provider, PyTorch device, GPU, and CUDA.
+Update status, transport profiles with a **measured recommendation** taken from the live
+stream, Silence Saver controls, light/dark theme, and a live view of what the backend sees:
+ONNX provider, PyTorch device, GPU, and CUDA.
+
+The images are generated, not hand-captured: `node scripts/readme_screenshots.mjs` drives a
+headless Chromium against a running backend with a synthetic voice as the microphone.
 
 ## Quick Start
 
@@ -199,14 +213,16 @@ For maintainers: update `VERSION` and both frontend package versions together, c
 5. Click `Start Voice Changer`.
 6. Shape the voice live: pitch, formant, F0 method, effect rack, or a one-click preset.
 7. Press <kbd>B</kbd> (or the `A/B Monitor` toggle) to compare the converted voice against your raw input without stopping the stream.
-8. Record the output, or render whole files in the `Converter` tab.
+8. Record the output (<kbd>R</kbd> starts and stops a take), or render whole files in the `Converter` tab.
+
+Single-letter shortcuts stay out of the way while you type in a field, and switching tabs never resets what you were doing in another one.
 
 ## API
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `GET` | `/health` | Health check |
-| `GET` | `/api/config` | Stream defaults, Silence Saver defaults, ONNX runtime info, PyTorch runtime info |
+| `GET` | `/api/config` | App version, stream and Silence Saver defaults, ONNX / PyTorch runtime info, and per-method F0 availability |
 | `GET` | `/api/updates` | Cached release status, current version and installation progress |
 | `POST` | `/api/updates/check` | Explicit, rate-limited local update check |
 | `POST` | `/api/updates/install` | Queue a verified version for installation and restart (managed launcher only) |
@@ -238,11 +254,19 @@ Interactive docs are available at `/docs` while the backend is running.
 3. Send binary audio frames: `[uint32 seq_num][uint32 reserved][float32[] PCM samples]`
 4. Receive processed audio frames in the same format — the response `reserved` field carries the server processing time in hundredths of a millisecond
 5. Send settings updates such as
-   `{"pitch_shift": 3.0, "formant_shift": -2.0, "f0_method": "rmvpe", "filter_radius": 3, "silence_saver": true, "silence_threshold_db": -52, "effects": {"reverb": {"enabled": true, "size": 0.6, "mix": 0.4}}}`
+   `{"pitch_shift": 3.0, "formant_shift": -2.0, "f0_method": "rmvpe", "index_rate": 0.75, "filter_radius": 3, "rms_mix_rate": 0.25, "protect": 0.33, "crepe_hop_length": 160, "silence_saver": true, "silence_threshold_db": -52, "effects": {"reverb": {"enabled": true, "size": 0.6, "mix": 0.4}}}`
 6. Receive periodic status JSON: `{"type": "status", "latency_ms": …, "model_ms": …, "dsp_ms": …, "mode": "rvc|onnx|dsp|bypass", "bypass": false, "inference_sleeping": false, "inference_duty_percent": 100.0, "effects_active": …}`
 
 All settings fields are optional and unknown fields are ignored, so older and
 newer clients interoperate with either side of this release.
+
+The server processes one chunk at a time, so a client that sends faster than
+replies arrive only builds a queue and adds that queue to its own latency. The
+bundled frontend keeps **one frame in flight**, parks at most two more, drops
+the oldest parked frame on overflow (fresh audio beats stale audio in a live
+monitor), and writes off a frame whose reply never comes after two seconds so a
+lost reply cannot wedge the sender. Third-party clients should apply the same
+back-pressure.
 
 #### Conversion bypass (A/B)
 
@@ -299,10 +323,14 @@ Environment variables use the `OVC_` prefix.
 | `OVC_ALLOW_ANY_ORIGIN` | `false` | Disable origin checks entirely (trusted networks only) |
 | `OVC_LOG_LEVEL` | `info` | Log level |
 | `OVC_HUBERT_PATH` | `models/assets/hubert_base.pt` | HuBERT path for RVC |
-| `OVC_RMVPE_ROOT` | `models/assets/rmvpe` | Optional RMVPE assets directory |
+| `OVC_RMVPE_ROOT` | `models/assets/rmvpe` | RMVPE assets directory (`rmvpe.pt`) — enables the `rmvpe` F0 method |
+| `OVC_RMVPE_ONNX_PATH` | `models/assets/rmvpe/rmvpe.onnx` | ONNX RMVPE model — enables `rmvpe-onnx` |
+| `OVC_CREPE_ONNX_FULL_PATH` | `models/assets/crepe/full.onnx` | ONNX Crepe (full) model — enables `crepe-onnx-full` |
+| `OVC_CREPE_ONNX_TINY_PATH` | `models/assets/crepe/tiny.onnx` | ONNX Crepe (tiny) model — enables `crepe-onnx-tiny` |
+| `OVC_CREPE_HOP_LENGTH` | `160` | Default hop length for the Mangio-Crepe methods (64–512) |
 | `OVC_RVC_STREAM_CONTEXT_SECONDS` | `0.14` | Rolling 16 kHz history each stream re-runs inference over |
 | `OVC_RVC_INDEX_RATE` | `0.75` | Retrieval mix when a matching `.index` exists |
-| `OVC_RVC_FILTER_RADIUS` | `3` | Harvest median filter radius (values below 3 disable smoothing) |
+| `OVC_RVC_FILTER_RADIUS` | `3` | Harvest / DIO median filter radius (values below 3 disable smoothing) |
 | `OVC_RVC_RMS_MIX_RATE` | `0.25` | RMS envelope blend |
 | `OVC_RVC_PROTECT` | `0.33` | Consonant protection |
 | `OVC_RVC_ALLOW_UNSAFE_CHECKPOINTS` | `false` | Permit unpickling checkpoints that fail safe loading (see [Security](#security)) |
@@ -378,14 +406,21 @@ pip install -r backend/requirements-test.txt
 python -m pytest          # backend
 
 cd frontend && npm install
-npm test                  # frontend
+npm run lint              # ESLint with react-hooks rules as errors
+npm test                  # frontend (vitest: lib modules + SSR component checks)
 npm run build
 ```
 
 `backend/requirements-test.txt` is intentionally lighter than
-`backend/requirements.txt` — the tests cover the transport, DSP chain, origin
-validation and checkpoint loading, none of which need the full RVC inference
-stack. CI runs both suites plus the frontend build (`.github/workflows/ci.yml`).
+`backend/requirements.txt` — the tests cover the transport, DSP chain, offline
+converter, origin validation, checkpoint loading and the updater, none of which
+need the full RVC inference stack. CI (`.github/workflows/ci.yml`) runs the
+backend suite on Linux, the updater tests again on Windows, and the frontend
+lint, tests and build.
+
+The frontend tests run in a plain Node environment, so browser behaviour is
+checked separately: `node scripts/readme_screenshots.mjs` doubles as a smoke
+test that starts a real stream in headless Chromium.
 
 ## Project Structure
 
@@ -395,14 +430,19 @@ OpenVoiceChanger/
 │   ├── main.py
 │   ├── config.py
 │   ├── security.py
+│   ├── version.py
 │   ├── routers/
 │   └── services/
 ├── frontend/
 │   ├── public/
 │   └── src/
 ├── tests/
+├── scripts/            # release packaging, README screenshot generator
+├── docs/images/
 ├── models/
-├── .github/workflows/
+├── .github/workflows/  # ci.yml, release.yml
+├── launch.py           # managed launcher (enables in-app updates)
+├── VERSION
 ├── README.md
 ├── README_KR.md
 ├── README_JP.md
@@ -420,6 +460,7 @@ The included `Makefile` is a convenience for POSIX shells or WSL.
 | `make dev` | Run backend and frontend dev servers |
 | `make dev-backend` | Run backend only |
 | `make dev-frontend` | Run frontend only |
+| `make lint` | Lint the frontend |
 | `make test` | Run backend and frontend tests |
 | `make test-backend` | Run backend tests only |
 | `make test-frontend` | Run frontend tests only |
@@ -429,7 +470,7 @@ The included `Makefile` is a convenience for POSIX shells or WSL.
 ## Requirements
 
 - Python 3.10+
-- Node.js 18+
+- Node.js 20.19+ (Vitest 4 and ESLint 10 no longer run on Node 18)
 - npm
 
 ## License

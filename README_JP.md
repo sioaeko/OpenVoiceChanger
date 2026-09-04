@@ -29,39 +29,47 @@
 ### リアルタイムスタジオ
 - AudioWorklet とバイナリ WebSocket によるリアルタイム音声変換
 - ONNX と RVC モデル対応 + **モデル不要の DSP モード**（チェックポイントなしでピッチシフトとエフェクトを使用可能）
-- リアルタイムのピッチ **とフォルマント** シフト、F0 方式選択（PM / Harvest / Crepe / RMVPE / FCPE）、RVC 詳細パラメータ（index rate、RMS mix、protect）
+- リアルタイムのピッチ **とフォルマント** シフト、**16 種の F0 方式**（PM / Harvest / DIO、Crepe と Mangio-Crepe、RMVPE、FCPE、それぞれの ONNX 版、オフライン専用のハイブリッド）— このマシンにランタイムやモデル資産がない方式は理由付きでグレー表示 — そして RVC 詳細パラメータ（index rate、filter radius、RMS mix、protect、Crepe hop length）
 - **サーバーサイド 12 種エフェクトラック**: ノイズゲート、ロボット、ウィスパー、電話、ディストーション、ビットクラッシュ、コーラス、エコー、リバーブ、トーン EQ、コンプレッサー、出力ゲイン
 - **内蔵ボイスプリセット 16 種**（チップマンク、ディープボイス、ロボット、ゴーストなど）+ Voice Lab の全状態を保存するユーザープリセット
 - **Silence Saver** — 無音が続く間は重いモデル推論を休止しつつ DSP の残響を維持し、音声が戻った最初のチャンクで再開
 - **計測ベースのパフォーマンスプロファイル**（Responsive / Balanced / Stable）— 直近の p95 往復レイテンシとサーバー処理時間からチャンクサイズを推奨
 - リアルタイムスペクトラムビジュアライザー、ピークホールド付き VU メーター、レイテンシスパークライン、サーバー処理時間の内訳（モデル / DSP / ネットワーク）、推論 duty モニタリング
-- **出力レコーダー** — 変換後の声を WAV でダウンロード
+- **出力レコーダー** — 変換後の声を録音（<kbd>R</kbd>）してタイムスタンプ付き WAV でダウンロード、<kbd>B</kbd> で A/B バイパスを切り替え
+- サーバーが落ちても指数バックオフで自動再接続、待ちたくなければ **Retry now** で即再試行
 
 ### オフライン変換
-- オーディオファイル（wav / mp3 / flac / ogg / m4a）をアップロードし、アクティブモデル + 現在の Voice Lab 設定 + エフェクトチェーンでレンダリングして WAV をダウンロード
+- オーディオファイル（wav / mp3 / flac / ogg / m4a）をアップロードし、アクティブモデル + 現在の Voice Lab 設定 + エフェクトチェーンでレンダリングして WAV をダウンロード。長い変換は途中でキャンセル可能
 
 ### 管理
 - ドラッグ & ドロップのモデルアップロード（`.pth` / `.pt` / `.onnx` + 付随する `.index`）、同時にアクティブなモデルは 1 つ
 - モデルメタデータバッジ: RVC バージョン、ターゲットサンプルレート、F0 対応、index 有無、デバイス
 - ライト / ダークテーマ、転送プロファイル、Silence Saver、ONNX / PyTorch / GPU / CUDA 状態をまとめた設定モーダル
-- キーボードフォーカスが明確な Lucide アイコン操作 + 通常のリポジトリリンクへ自然に切り替わる明示的な GitHub Star 操作
+- アプリ内でアップデートを確認し、管理ランチャー経由でワンクリック **Update and restart**（[アップデート](#アップデート) 参照）
+- リンクで共有できるタブ（`?tab=models`、`?tab=converter`、`?settings`）— タブを切り替えても選んだファイルや進行中の変換は保持され、ブラウザの戻る / 進むでタブ間を移動
+- キーボードフォーカスが明確な Lucide アイコン操作と標準の tablist ナビゲーション + 通常のリポジトリリンクへ自然に切り替わる明示的な GitHub Star 操作
 
 ## スクリーンショット
 
+すべてのキャプチャは、RVC ランタイムを入れていないマシンでモデルなしの DSP モードのスタジオを
+実際に動かして撮ったものです。F0 セレクターが各方式を "unavailable" と表示しているのはそのためで、
+推論スタックをインストールする前のユーザーが目にする画面そのものです。
+
 ### スタジオ
 
-![スタジオ — リアルタイムワークスペース](docs/images/main-ui.png)
+![スタジオ — ストリーミング中のリアルタイムワークスペース](docs/images/main-ui.png)
 
-リアルタイムワークスペース: ライブスペクトラム、デバイスルーティング、出力レコーダー、
-モデル / DSP / ネットワークのレイテンシ内訳付き VU メーター、ピッチ・フォルマント・F0 方式のコントロール。
+**Deep Voice** プリセットを適用してストリーミング中のリアルタイムワークスペース: 入力 / 出力の
+ライブスペクトラム、ピークホールド付き VU メーター、5 ms の往復レイテンシとスパークラインおよび
+DSP / ネットワークの内訳、録音中のテイク、そしてピッチ・フォルマント・F0 方式のコントロール。
 
 ### プリセット & エフェクトラック
 
 ![ボイスプリセットと DSP エフェクトラック](docs/images/effects-rack.png)
 
-ワンクリックのボイスプリセット 16 種とサーバーサイド 12 種の DSP チェーン。
-ユーザープリセットは F0、retrieval、filter、RMS、protect の設定も保存します。
-モデルなしでもすべて動作し、エフェクトはライブストリームに即時反映されます。
+ワンクリックのボイスプリセット 16 種とサーバーサイド 12 種の DSP チェーン。ここでは **Ghost** を選び、
+ウィスパー・エコー・リバーブが有効です。ユーザープリセットは F0、retrieval、filter、RMS、protect、
+Crepe hop の設定も保存します。モデルなしでもすべて動作し、エフェクトはライブストリームに即時反映されます。
 
 ### モデル
 
@@ -74,16 +82,20 @@ RVC / ONNX チェックポイントと付随する `.index` ファイルのド�
 
 ![オフラインファイル変換](docs/images/converter.png)
 
-オーディオファイル全体をアクティブモデル + エフェクトチェーンでレンダリングし、WAV としてダウンロードします。
-RVC 変換はリアルタイムストリームの短いコンテキスト窓を使わずファイル全体を処理し、
+オーディオファイル全体をアクティブモデル + エフェクトチェーンでレンダリングし、試聴してから WAV として
+ダウンロードします。RVC 変換はリアルタイムストリームの短いコンテキスト窓を使わずファイル全体を処理し、
 現在の Index Rate、Filter Radius、RMS Mix、Protect も反映します。
 
 ### 設定
 
 ![セッションランタイム設定](docs/images/settings-modal.png)
 
-ライト / ダークテーマ、転送プロファイル、計測ベースの推奨、Silence Saver 設定に加え、
-バックエンドが認識している ONNX provider、PyTorch device、GPU、CUDA の状態を表示します。
+アップデート状態、ライブストリームから**計測した推奨**付きの転送プロファイル、Silence Saver 設定、
+ライト / ダークテーマに加え、バックエンドが認識している ONNX provider、PyTorch device、GPU、CUDA の
+状態を表示します。
+
+これらの画像は手動キャプチャではなく生成物です。`node scripts/readme_screenshots.mjs` が起動中の
+バックエンドに対してヘッドレス Chromium を立ち上げ、合成音声をマイク入力として撮影します。
 
 ## クイックスタート
 
@@ -199,14 +211,16 @@ npm run dev
 5. `Start Voice Changer` を押す
 6. ピッチ、フォルマント、F0 方式、エフェクトラック、ワンクリックプリセットで声をリアルタイムに変える
 7. <kbd>B</kbd> キー（または `A/B Monitor`）でストリームを止めずに変換音と原音を比較する
-8. 出力を録音するか、`Converter` タブでファイル全体を変換する
+8. 出力を録音するか（<kbd>R</kbd> で録音の開始 / 停止）、`Converter` タブでファイル全体を変換する
+
+1 文字のショートカットは入力欄でタイプしている間は動作せず、タブを切り替えても別のタブでの作業はリセットされません。
 
 ## API
 
 | メソッド | エンドポイント | 説明 |
 |----------|----------------|------|
 | `GET` | `/health` | ヘルスチェック |
-| `GET` | `/api/config` | ストリームと Silence Saver のデフォルト、ONNX / PyTorch ランタイム情報 |
+| `GET` | `/api/config` | アプリのバージョン、ストリームと Silence Saver のデフォルト、ONNX / PyTorch ランタイム情報、F0 方式ごとの利用可否 |
 | `GET` | `/api/updates` | キャッシュ済みリリース状態、現在のバージョン、更新の進行状況 |
 | `POST` | `/api/updates/check` | 明示的なローカル更新確認 (頻度制限あり) |
 | `POST` | `/api/updates/install` | 検証済みバージョンの更新と再起動を予約 (管理ランチャーのみ) |
@@ -233,11 +247,18 @@ npm run dev
 3. バイナリオーディオフレームを送信: `[uint32 seq_num][uint32 reserved][float32[] PCM samples]`
 4. 同じ形式で処理済みオーディオフレームを受信 — レスポンスの `reserved` フィールドにサーバー処理時間（1/100 ms 単位）が入ります
 5. 必要に応じて設定を送信:
-   `{"pitch_shift": 3.0, "formant_shift": -2.0, "f0_method": "rmvpe", "filter_radius": 3, "silence_saver": true, "silence_threshold_db": -52, "effects": {"reverb": {"enabled": true, "size": 0.6, "mix": 0.4}}}`
+   `{"pitch_shift": 3.0, "formant_shift": -2.0, "f0_method": "rmvpe", "index_rate": 0.75, "filter_radius": 3, "rms_mix_rate": 0.25, "protect": 0.33, "crepe_hop_length": 160, "silence_saver": true, "silence_threshold_db": -52, "effects": {"reverb": {"enabled": true, "size": 0.6, "mix": 0.4}}}`
 6. 定期的なステータス JSON を受信: `{"type": "status", "latency_ms": …, "model_ms": …, "dsp_ms": …, "mode": "rvc|onnx|dsp|bypass", "bypass": false, "inference_sleeping": false, "inference_duty_percent": 100.0, "effects_active": …}`
 
 設定フィールドはすべて任意で、未知のフィールドは無視されるため、本リリースの
 前後どちらのクライアント／サーバーとも相互運用できます。
+
+サーバーはチャンクを 1 つずつ処理するため、応答より速く送るとキューが積み上がり、
+それがそのまま自分のレイテンシになります。同梱のフロントエンドは**送信中フレームを 1 つ**
+だけ持ち、最大 2 つを待機させ、溢れたら最も古い待機フレームを捨て（ライブモニターでは
+新しい音声の方が古い音声より価値があります）、2 秒応答のないフレームは見切ることで、
+応答が 1 つ失われても送信が止まらないようにしています。外部クライアントも同じ
+バックプレッシャーを適用してください。
 
 初期 config で送るサンプルレートは、要求値ではなく `AudioContext` が**実際に**
 動作しているレート (`audioContext.sampleRate`) を送ってください。ブラウザは
@@ -291,16 +312,20 @@ GitHub 上でユーザー自身が判断できる通常のリポジトリリン�
 | `OVC_ALLOW_ANY_ORIGIN` | `false` | origin 検証を完全に無効化（信頼できるネットワークのみ） |
 | `OVC_LOG_LEVEL` | `info` | ログレベル |
 | `OVC_HUBERT_PATH` | `models/assets/hubert_base.pt` | RVC 用 HuBERT パス |
-| `OVC_RMVPE_ROOT` | `models/assets/rmvpe` | 任意の RMVPE 資産ディレクトリ |
+| `OVC_RMVPE_ROOT` | `models/assets/rmvpe` | RMVPE 資産ディレクトリ（`rmvpe.pt`）— `rmvpe` F0 方式を有効化 |
+| `OVC_RMVPE_ONNX_PATH` | `models/assets/rmvpe/rmvpe.onnx` | ONNX RMVPE モデル — `rmvpe-onnx` を有効化 |
+| `OVC_CREPE_ONNX_FULL_PATH` | `models/assets/crepe/full.onnx` | ONNX Crepe（full）モデル — `crepe-onnx-full` を有効化 |
+| `OVC_CREPE_ONNX_TINY_PATH` | `models/assets/crepe/tiny.onnx` | ONNX Crepe（tiny）モデル — `crepe-onnx-tiny` を有効化 |
+| `OVC_CREPE_HOP_LENGTH` | `160` | Mangio-Crepe 方式の既定 hop length（64–512） |
 | `OVC_RVC_STREAM_CONTEXT_SECONDS` | `0.14` | 各ストリームが推論をやり直す 16 kHz 履歴の長さ |
 | `OVC_RVC_INDEX_RATE` | `0.75` | `.index` がある場合の retrieval mix |
-| `OVC_RVC_FILTER_RADIUS` | `3` | Harvest median filter 半径（3 未満で無効） |
+| `OVC_RVC_FILTER_RADIUS` | `3` | Harvest / DIO median filter 半径（3 未満で無効） |
 | `OVC_RVC_RMS_MIX_RATE` | `0.25` | RMS envelope blend |
+| `OVC_RVC_PROTECT` | `0.33` | 子音保護値 |
 | `OVC_RVC_ALLOW_UNSAFE_CHECKPOINTS` | `false` | 安全な読み込みに失敗したチェックポイントの unpickle を許可（[セキュリティ](#セキュリティ)参照） |
 | `OVC_PRESETS_PATH` | `data/presets.json` | ユーザープリセット保存ファイル |
 | `OVC_MAX_CONVERT_SECONDS` | `600` | オフライン変換の最大オーディオ長 |
 | `OVC_UPDATE_CHECK_ENABLED` | `true` | 起動時と毎時間の公開リリース確認。クリックせずにインストールしない |
-| `OVC_RVC_PROTECT` | `0.33` | 子音保護値 |
 
 `OVC_RVC_STREAM_CONTEXT_SECONDS` はバッファサイズではなくレイテンシと品質の
 トレードオフです。各チャンクはこのウィンドウ全体に対して推論されるため、値を
@@ -369,9 +394,20 @@ pip install -r backend/requirements-test.txt
 python -m pytest          # バックエンド
 
 cd frontend && npm install
-npm test                  # フロントエンド
+npm run lint              # ESLint（react-hooks ルールはエラー扱い）
+npm test                  # フロントエンド（vitest: lib モジュール + SSR コンポーネント検査）
 npm run build
 ```
+
+`backend/requirements-test.txt` は意図的に `backend/requirements.txt` より軽量です。テストは
+転送層、DSP チェーン、オフライン変換、origin 検証、チェックポイント読み込み、アップデーターを
+対象とし、いずれも RVC 推論スタック全体を必要としません。CI（`.github/workflows/ci.yml`）は
+Linux でバックエンドスイートを、Windows でアップデーターのテストをもう一度、そしてフロントエンドの
+lint・テスト・ビルドを実行します。
+
+フロントエンドのテストは素の Node 環境で動くため、ブラウザの挙動は別途確認します。
+`node scripts/readme_screenshots.mjs` はヘッドレス Chromium で実際のストリームを開始する
+スモークテストとしても機能します。
 
 ## プロジェクト構成
 
@@ -380,12 +416,20 @@ OpenVoiceChanger/
 ├── backend/
 │   ├── main.py
 │   ├── config.py
+│   ├── security.py
+│   ├── version.py
 │   ├── routers/
 │   └── services/
 ├── frontend/
 │   ├── public/
 │   └── src/
+├── tests/
+├── scripts/            # リリースパッケージング、README スクリーンショット生成
+├── docs/images/
 ├── models/
+├── .github/workflows/  # ci.yml, release.yml
+├── launch.py           # 管理ランチャー（アプリ内アップデートを有効化）
+├── VERSION
 ├── README.md
 ├── README_KR.md
 ├── README_JP.md
@@ -399,16 +443,21 @@ OpenVoiceChanger/
 | コマンド | 説明 |
 |----------|------|
 | `make install` | バックエンドとフロントエンドの依存関係をインストール |
+| `make install-test` | バックエンドのテスト依存関係をインストール |
 | `make dev` | バックエンドとフロントエンドの開発サーバーを起動 |
 | `make dev-backend` | バックエンドのみ起動 |
 | `make dev-frontend` | フロントエンドのみ起動 |
+| `make lint` | フロントエンドを lint |
+| `make test` | バックエンドとフロントエンドのテストを実行 |
+| `make test-backend` | バックエンドのテストのみ実行 |
+| `make test-frontend` | フロントエンドのテストのみ実行 |
 | `make build` | フロントエンドをビルド |
 | `make clean` | ビルド成果物を削除 |
 
 ## 要件
 
 - Python 3.10+
-- Node.js 18+
+- Node.js 20.19+（Vitest 4 と ESLint 10 は Node 18 では動作しません）
 - npm
 
 ## ライセンス

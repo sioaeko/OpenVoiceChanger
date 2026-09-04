@@ -1,4 +1,4 @@
-.PHONY: dev-backend dev-frontend dev install install-test test test-backend test-frontend build clean
+.PHONY: dev-backend dev-frontend dev install install-test lint test test-backend test-frontend build clean
 
 dev-backend:
 	PYTHONPATH=. uvicorn backend.main:app --reload
@@ -19,6 +19,9 @@ install-test:
 
 test-backend:
 	python -m pytest
+
+lint:
+	cd frontend && npm run lint
 
 test-frontend:
 	cd frontend && npm test
