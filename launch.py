@@ -70,6 +70,15 @@ class Launcher:
     def start(self):
         family = socket.AF_INET6 if ":" in self.host else socket.AF_INET
         with socket.socket(family) as probe:
+            if os.name != "nt":
+                # Match what asyncio (and therefore uvicorn) does on POSIX: a
+                # port whose only remaining sockets are TIME_WAIT leftovers from
+                # the previous server's connections is free to bind. Without
+                # this the probe rejects a restart on the same port that the
+                # server itself would have accepted. Windows has no such
+                # TIME_WAIT rule, and SO_REUSEADDR there would let the probe
+                # succeed on a port another process is actively listening on.
+                probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             try:
                 probe.bind((self.host, self.port))
             except OSError as exc:
