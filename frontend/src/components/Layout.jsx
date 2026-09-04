@@ -1,6 +1,8 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { Boxes, FileDown, Mic2 } from 'lucide-react';
 
+// Ids match lib/navigation TAB_IDS; the matching panels in App carry
+// id="panel-<id>" and aria-labelledby="tab-<id>".
 const TABS = [
   {
     id: 'studio',
@@ -19,6 +21,72 @@ const TABS = [
   },
 ];
 
+/**
+ * Top-level view switcher.
+ *
+ * Marked up as a tablist (not a nav) because the three views are panels of one
+ * document rather than separate pages: assistive tech announces "tab 2 of 3,
+ * selected", and arrow keys move between them while only the selected tab
+ * sits in the Tab order, as the WAI-ARIA pattern prescribes.
+ */
+function TabList({ tab, onTabChange }) {
+  const listRef = useRef(null);
+
+  const handleKeyDown = (event) => {
+    const keys = ['ArrowLeft', 'ArrowRight', 'Home', 'End'];
+    if (!keys.includes(event.key)) return;
+    event.preventDefault();
+
+    const currentIndex = Math.max(0, TABS.findIndex(({ id }) => id === tab));
+    const nextIndex = event.key === 'Home'
+      ? 0
+      : event.key === 'End'
+        ? TABS.length - 1
+        : (currentIndex + (event.key === 'ArrowRight' ? 1 : -1) + TABS.length) % TABS.length;
+    const nextId = TABS[nextIndex].id;
+
+    onTabChange?.(nextId);
+    listRef.current?.querySelector(`[data-tab="${nextId}"]`)?.focus();
+  };
+
+  return (
+    <div
+      ref={listRef}
+      role="tablist"
+      aria-label="Workspace"
+      onKeyDown={handleKeyDown}
+      className="order-3 flex w-full items-center gap-1 rounded-lg border border-[color:var(--frost-border)] bg-sunken p-1 sm:order-none sm:w-auto"
+    >
+      {TABS.map((item) => {
+        const selected = tab === item.id;
+        const Icon = item.Icon;
+        return (
+          <button
+            key={item.id}
+            type="button"
+            role="tab"
+            id={`tab-${item.id}`}
+            aria-selected={selected}
+            aria-controls={`panel-${item.id}`}
+            tabIndex={selected ? 0 : -1}
+            data-tab={item.id}
+            data-selected={selected}
+            onClick={() => onTabChange?.(item.id)}
+            className={`flex h-8 min-w-0 flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-md border px-2 text-xs font-medium sm:flex-initial sm:gap-2 sm:px-4 ${
+              selected
+                ? 'frost-control text-fg'
+                : 'border-transparent text-fg-muted transition-colors duration-150 ease-out hover:text-fg focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--frost-focus)]'
+            }`}
+          >
+            <Icon className="h-4 w-4 flex-shrink-0" aria-hidden="true" />
+            {item.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function Layout({ children, tab, onTabChange, statusSlot = null, headerActions = null }) {
   return (
     <div className="min-h-screen text-fg">
@@ -30,45 +98,16 @@ export default function Layout({ children, tab, onTabChange, statusSlot = null, 
                 <Mic2 className="h-4 w-4 text-fg-secondary" aria-hidden="true" />
               </div>
               <div className="leading-tight">
-                <p className="text-sm font-semibold tracking-normal text-fg">
+                <h1 className="text-sm font-semibold tracking-normal text-fg">
                   OpenVoiceChanger
-                </p>
-                <p className="text-[10px] font-medium uppercase tracking-[0.2em] text-fg-subtle">
+                </h1>
+                <p className="text-[11px] font-medium text-fg-subtle">
                   Realtime Voice Studio
                 </p>
               </div>
             </div>
 
-            {/* The trough stays dark so the raised selected pill reads clearly
-                against it — lightening the container here would flatten the
-                selected/unselected difference. */}
-            <nav className="order-3 flex w-full items-center gap-0.5 rounded-md border border-[color:var(--frost-border)] bg-sunken p-0.5 shadow-[var(--frost-shadow)] sm:order-none sm:w-auto">
-              {TABS.map((item) => {
-                const selected = tab === item.id;
-                const Icon = item.Icon;
-                return (
-                  <button
-                    key={item.id}
-                    onClick={() => onTabChange?.(item.id)}
-                    aria-current={selected ? 'page' : undefined}
-                    data-selected={selected}
-                    /* Shared `border` gives every pill the same 1px box so
-                       switching tabs never shifts widths; the colour comes from
-                       .frost-control when selected and is transparent when not.
-                       Keeping `rounded` (4px) here overrides the 8px token on
-                       purpose — this pill nests inside a 6px trough. */
-                    className={`flex flex-1 items-center justify-center gap-1 whitespace-nowrap rounded border px-1 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] sm:flex-initial sm:gap-2 sm:px-4 ${
-                      selected
-                        ? 'frost-control text-fg'
-                        : 'border-transparent text-fg-subtle transition-colors duration-150 ease-out hover:text-fg-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--frost-focus)]'
-                    }`}
-                  >
-                    <Icon className="h-4 w-4 flex-shrink-0" aria-hidden="true" />
-                    {item.label}
-                  </button>
-                );
-              })}
-            </nav>
+            <TabList tab={tab} onTabChange={onTabChange} />
 
             <div className="ml-auto flex items-center gap-3">
               {statusSlot}
@@ -84,7 +123,7 @@ export default function Layout({ children, tab, onTabChange, statusSlot = null, 
         </main>
 
         <footer className="border-t border-line py-3">
-          <p className="mx-auto w-full max-w-[1560px] px-4 text-[10px] uppercase tracking-[0.18em] text-fg-faint sm:px-6 lg:px-8">
+          <p className="mx-auto w-full max-w-[1560px] px-4 text-[11px] text-fg-faint sm:px-6 lg:px-8">
             Local realtime RVC · ONNX · DSP voice studio
           </p>
         </footer>

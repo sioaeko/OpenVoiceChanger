@@ -18,7 +18,7 @@
     --surface-raised: rgba(0, 0, 0, 0.2);
     --surface-sunken: rgba(0, 0, 0, 0.3);
     --surface-input: rgba(0, 0, 0, 0.25);
-    --surface-overlay: rgba(18, 16, 28, 0.95);
+    --surface-overlay: rgba(16, 16, 19, 0.96);
     --surface-header: rgba(10, 10, 12, 0.95);
     --scrim: rgba(0, 0, 0, 0.72);
     --overlay-shadow: rgba(0, 0, 0, 0.55);
@@ -30,9 +30,9 @@
     /* Text */
     --text-primary: #f4f4f5;
     --text-secondary: #d4d4d8;
-    --text-muted: #a1a1aa;
-    --text-subtle: #71717a;
-    --text-faint: #52525b;
+    --text-muted: #b0b0b8;
+    --text-subtle: #a1a1aa;
+    --text-faint: #9696a0;
 
     /* Primary action — highest-contrast surface in the theme */
     --primary-bg: #f4f4f5;
@@ -132,8 +132,8 @@
     --text-primary: #18181b;
     --text-secondary: #3f3f46;
     --text-muted: #52525b;
-    --text-subtle: #5b5b64;
-    --text-faint: #6b6b74;
+    --text-subtle: #52525b;
+    --text-faint: #63636c;
 
     --primary-bg: #18181b;
     --primary-bg-hover: #000000;
@@ -218,7 +218,7 @@
   }
 
   .panel-kicker {
-    @apply text-[10px] font-semibold uppercase tracking-[0.22em] text-fg-subtle;
+    @apply text-[11px] font-medium tracking-normal text-fg-subtle;
   }
 
   .panel-title {
@@ -226,24 +226,22 @@
   }
 
   .chip-button {
-    @apply rounded border border-line-strong bg-control px-3 py-1.5 text-[11px] font-medium uppercase tracking-[0.12em] text-fg-muted transition hover:border-line-hover hover:bg-control-hover hover:text-fg disabled:cursor-not-allowed disabled:opacity-40;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 32px;
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0;
+    line-height: 18px;
+    padding: 0.375rem 0.75rem;
   }
 
-  /* frost-lite: the frosted-control treatment for chrome that floats above
-   * content — the header tab nav, the header settings button and the modal
-   * close button.
-   *
-   * Deliberately NO backdrop-filter. Everything behind these controls is a
-   * flat fill (#0a0a0c body, #101013 panels), so blurring it would return the
-   * same colour while still forcing a compositing layer and a re-filter on
-   * every frame the backdrop changes — a cost a realtime audio app should not
-   * pay for zero visual difference. The glass read comes from the layered
-   * alpha, the 1px top highlight and the defined edge instead.
-   *
-   * Lives in the components layer, so any Tailwind utility (radius, colour)
-   * on the same element still wins — utilities are emitted after components.
-   */
-  .frost-control {
+  /* Alpha layers and a top highlight keep the Star button's material without
+     adding per-control backdrop filters to the realtime audio workspace. */
+  .frost-control,
+  .chip-button {
     border: 1px solid var(--frost-border);
     border-radius: var(--frost-radius);
     background-color: var(--frost-bg);
@@ -255,23 +253,81 @@
     transition-timing-function: ease-out;
   }
 
-  .frost-control:hover {
+  .frost-control:not(:disabled):not([aria-disabled='true']):hover,
+  .chip-button:not(:disabled):not([aria-disabled='true']):hover {
     border-color: var(--frost-border-hover);
     background-color: var(--frost-bg-hover);
+    color: var(--frost-ink-hover, var(--text-primary));
   }
 
   /* Pressed reads as MORE solid, not less: a control that fades under the
    * pointer feels like it is dissolving rather than depressing. */
-  .frost-control:active {
+  .frost-control:not(:disabled):not([aria-disabled='true']):active,
+  .chip-button:not(:disabled):not([aria-disabled='true']):active {
     background-color: var(--frost-bg-pressed);
     transform: translateY(0.5px);
   }
 
-  /* Persistent "on" state (the selected tab) sits at the pressed alpha with a
-   * brighter edge, so it stays clearly ahead of its unselected siblings and
-   * does not dim when the pointer leaves. */
-  .frost-control[data-selected='true'],
-  .frost-control[data-selected='true']:hover {
+  .frost-control[data-tone='primary'] {
+    --frost-bg: var(--primary-bg);
+    --frost-bg-hover: var(--primary-bg-hover);
+    --frost-bg-pressed: var(--primary-bg);
+    --frost-border: var(--primary-bg);
+    --frost-border-hover: var(--primary-bg-hover);
+    --frost-ink: var(--primary-fg);
+    --frost-ink-hover: var(--primary-fg);
+  }
+
+  .frost-control[data-tone='danger'] {
+    --frost-bg: var(--danger-bg);
+    --frost-bg-hover: var(--danger-bg-strong);
+    --frost-bg-pressed: var(--danger-bg-strong);
+    --frost-border: var(--danger-line);
+    --frost-border-hover: var(--danger-line-strong);
+    --frost-ink: var(--danger-fg);
+    --frost-ink-hover: var(--danger-fg);
+  }
+
+  .frost-control[data-tone='warning'] {
+    --frost-bg: var(--warn-bg);
+    --frost-bg-hover: var(--warn-bg-strong);
+    --frost-bg-pressed: var(--warn-bg-strong);
+    --frost-border: var(--warn-line);
+    --frost-border-hover: var(--warn-line-strong);
+    --frost-ink: var(--warn-fg);
+    --frost-ink-hover: var(--warn-fg);
+  }
+
+  .frost-control[data-tone='success'] {
+    --frost-bg: var(--ok-bg);
+    --frost-bg-hover: var(--ok-bg-strong);
+    --frost-bg-pressed: var(--ok-bg-strong);
+    --frost-border: var(--ok-line);
+    --frost-border-hover: var(--ok-line-strong);
+    --frost-ink: var(--ok-fg);
+    --frost-ink-hover: var(--ok-fg);
+  }
+
+  .frost-control[data-tone] {
+    color: var(--frost-ink);
+  }
+
+  .frost-control:disabled,
+  .frost-control[aria-disabled='true'],
+  .chip-button:disabled,
+  .chip-button[aria-disabled='true'] {
+    cursor: not-allowed;
+    border-color: var(--border-default);
+    background-color: var(--control-bg);
+    color: var(--text-subtle);
+    box-shadow: none;
+    opacity: 0.55;
+  }
+
+  .frost-control[data-selected='true']:not(:disabled):not([aria-disabled='true']),
+  .frost-control[data-selected='true']:not(:disabled):not([aria-disabled='true']):hover,
+  .chip-button[data-selected='true']:not(:disabled):not([aria-disabled='true']),
+  .chip-button[data-selected='true']:not(:disabled):not([aria-disabled='true']):hover {
     border-color: var(--frost-border-selected);
     background-color: var(--frost-bg-selected);
     box-shadow:
@@ -279,10 +335,65 @@
       var(--frost-shadow-selected);
   }
 
+  .toggle-switch {
+    position: relative;
+    flex-shrink: 0;
+    width: 44px;
+    height: 24px;
+    border: 1px solid var(--frost-border);
+    border-radius: var(--frost-radius);
+    background-color: var(--frost-bg);
+    box-shadow: inset 0 1px 0 var(--frost-highlight);
+  }
+
+  .toggle-switch[aria-checked='true'] {
+    border-color: var(--ok-line-strong);
+    background-color: var(--ok-bg-strong);
+  }
+
+  .toggle-switch > span {
+    position: absolute;
+    top: 50%;
+    left: 3px;
+    width: 16px;
+    height: 16px;
+    border-radius: 5px;
+    background-color: var(--text-faint);
+    transform: translate(0, -50%);
+    transition: transform 150ms ease-out, background-color 150ms ease-out;
+  }
+
+  .toggle-switch[aria-checked='true'] > span {
+    background-color: var(--ok-solid);
+    transform: translate(20px, -50%);
+  }
+
   .frost-control:focus-visible,
-  .chip-button:focus-visible {
+  .chip-button:focus-visible,
+  .toggle-switch:focus-visible,
+  input[type='range']:focus-visible {
     outline: 2px solid var(--frost-focus);
     outline-offset: 2px;
+  }
+
+  /* Secondary controls (a chip's delete button) that hide until the pointer
+     arrives. Only on devices that can hover: a touch screen never "arrives",
+     so there the control is simply always shown. */
+  .reveal-on-hover {
+    opacity: 1;
+    transition: opacity 150ms ease-out;
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .reveal-on-hover {
+      opacity: 0;
+    }
+
+    .group:hover .reveal-on-hover,
+    .group:focus-within .reveal-on-hover,
+    .reveal-on-hover:focus-visible {
+      opacity: 1;
+    }
   }
 }
 
@@ -405,6 +516,11 @@ input[type='range'].fx-slider::-moz-range-thumb {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+
+  .frost-control,
+  .chip-button {
+    transform: none !important;
   }
 }
 

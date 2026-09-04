@@ -13,9 +13,12 @@ import PresetBar from './components/PresetBar';
 import Recorder from './components/Recorder';
 import FileConverter from './components/FileConverter';
 import GitHubStarButton from './components/GitHubStarButton';
+import UpdateButton from './components/UpdateButton';
 import useWebSocket from './hooks/useWebSocket';
 import useAudioPipeline from './hooks/useAudioPipeline';
 import useAudioDevices from './hooks/useAudioDevices';
+import useUpdates from './hooks/useUpdates';
+import { localUpdateBlock } from './lib/updates';
 import { getActiveModel, fetchConfig } from './lib/api';
 import { applyConfig, DEFAULT_F0_METHOD } from './lib/constants';
 import { defaultEffects, effectsFromPreset } from './lib/effects';
@@ -27,10 +30,16 @@ import {
 import { buildTabUrl, readTabFromSearch } from './lib/navigation';
 import { shouldTriggerShortcut } from './lib/shortcuts';
 import { applyTheme, readAppliedTheme, storeTheme } from './lib/theme';
+import { FALLBACK_F0_METHODS, normalizeF0Capabilities } from './lib/f0Methods';
 
 const GLOBAL_SETTINGS_STORAGE_KEY = 'ovc_global_settings';
 const VOICE_STORAGE_KEY = 'ovc_voice_v2';
 const EFFECTS_STORAGE_KEY = 'ovc_effects_v2';
+
+// Slider drags produce many changes per second; the payload goes out (and to
+// storage) once the user pauses for this long.
+const SETTINGS_DEBOUNCE_MS = 140;
+const ACTIVE_MODEL_POLL_MS = 5000;
 
 const DEFAULT_VOICE = {
   pitch: 0,
@@ -41,6 +50,7 @@ const DEFAULT_VOICE = {
   filterRadius: 3,
   rmsMixRate: 0.25,
   protect: 0.33,
+  crepeHopLength: 160,
 };
 
 const DEFAULT_RUNTIME_INFO = {
@@ -64,6 +74,7 @@ const DEFAULT_RUNTIME_CONFIG = {
   silenceSaver: true,
   silenceThresholdDb: -52,
   runtime: DEFAULT_RUNTIME_INFO,
+  f0Methods: FALLBACK_F0_METHODS,
 };
 
 function normalizePositiveInt(value, fallback) {
@@ -120,6 +131,7 @@ function mergeRuntimeConfig(config, stored = null) {
       stored?.silenceThresholdDb,
       baseSilenceThresholdDb
     ),
+    f0Methods: normalizeF0Capabilities(config?.f0_methods),
     runtime: {
       onnx: {
         ...DEFAULT_RUNTIME_INFO.onnx,
@@ -145,6 +157,16 @@ function mergeRuntimeConfig(config, stored = null) {
   };
 }
 
+/** The persisted slice of the runtime config — hardware info is never stored. */
+function persistedRuntimeConfig(config) {
+  return {
+    sampleRate: config.sampleRate,
+    chunkSize: config.chunkSize,
+    silenceSaver: config.silenceSaver,
+    silenceThresholdDb: config.silenceThresholdDb,
+  };
+}
+
 function loadInitialVoice() {
   const stored = readStored(VOICE_STORAGE_KEY);
   return stored ? { ...DEFAULT_VOICE, ...stored } : { ...DEFAULT_VOICE };
@@ -155,10 +177,27 @@ function loadInitialEffects() {
   return stored ? effectsFromPreset(stored) : defaultEffects();
 }
 
+/** Drop ?settings from the address bar without adding a history entry. */
+function clearSettingsParam() {
+  const url = new URL(window.location.href);
+  if (!url.searchParams.has('settings')) return;
+  url.searchParams.delete('settings');
+  window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
+}
+
 export default function App() {
   const wsHook = useWebSocket();
   const pipeline = useAudioPipeline(wsHook);
   const devices = useAudioDevices();
+  const [converterBlock, setConverterBlock] = useState(null);
+  const [audioStarting, setAudioStarting] = useState(false);
+  const updates = useUpdates(localUpdateBlock({
+    isStarting: audioStarting,
+    isRunning: pipeline.isRunning,
+    isRecording: pipeline.isRecording,
+    lastRecording: pipeline.lastRecording,
+    converterBlock,
+  }));
 
   // Deep links: ?tab=models|converter selects a tab, ?settings opens the modal.
   const [tab, setTab] = useState(() => readTabFromSearch(window.location.search));
@@ -170,7 +209,6 @@ export default function App() {
   const [voice, setVoice] = useState(loadInitialVoice);
   const [effects, setEffects] = useState(loadInitialEffects);
   const [activePresetId, setActivePresetId] = useState(null);
-  const [latencyHistory, setLatencyHistory] = useState([]);
   // Full conversion bypass. Deliberately not persisted: a monitoring toggle
   // should never be silently still on the next time the studio opens.
   const [bypass, setBypass] = useState(false);
@@ -181,49 +219,64 @@ export default function App() {
   const {
     status: wsStatus,
     latency,
+    latencyHistory,
     serverMs,
     serverStats,
     connect,
     disconnect,
+    retryNow,
     sendSettings,
     setOnSettingsResponse,
     setOnOpen,
+    resetLatency,
   } = wsHook;
+
+  const updateBusy = updates.busy || updates.needsReload;
 
   // --- Settings payload sync -------------------------------------------------
 
+  // The full settings message, kept in a ref so the connection-open callback
+  // and the debounced sender always read the latest values.
   const settingsPayloadRef = useRef(null);
-  settingsPayloadRef.current = {
-    pitch_shift: voice.pitch,
-    formant_shift: voice.formant,
-    f0_method: voice.f0Method,
-    index_rate: voice.indexRate,
-    filter_radius: voice.filterRadius,
-    rms_mix_rate: voice.rmsMixRate,
-    protect: voice.protect,
-    effects,
-    bypass,
-    silence_saver: runtimeConfig.silenceSaver,
-    silence_threshold_db: runtimeConfig.silenceThresholdDb,
-  };
-
-  const settingsDebounceRef = useRef(null);
   useEffect(() => {
-    writeStored(VOICE_STORAGE_KEY, voice);
-    writeStored(EFFECTS_STORAGE_KEY, effects);
-
-    if (wsStatus !== 'connected') return undefined;
-    if (settingsDebounceRef.current) clearTimeout(settingsDebounceRef.current);
-    settingsDebounceRef.current = setTimeout(() => {
-      sendSettings(settingsPayloadRef.current);
-    }, 140);
-    return () => {
-      if (settingsDebounceRef.current) clearTimeout(settingsDebounceRef.current);
+    settingsPayloadRef.current = {
+      pitch_shift: voice.pitch,
+      formant_shift: voice.formant,
+      f0_method: voice.f0Method,
+      index_rate: voice.indexRate,
+      filter_radius: voice.filterRadius,
+      rms_mix_rate: voice.rmsMixRate,
+      protect: voice.protect,
+      crepe_hop_length: voice.crepeHopLength,
+      effects,
+      bypass,
+      silence_saver: runtimeConfig.silenceSaver,
+      silence_threshold_db: runtimeConfig.silenceThresholdDb,
     };
-  }, [voice, effects, wsStatus, sendSettings]);
+  }, [voice, effects, bypass, runtimeConfig.silenceSaver, runtimeConfig.silenceThresholdDb]);
+
+  const wsStatusRef = useRef(wsStatus);
+  useEffect(() => {
+    wsStatusRef.current = wsStatus;
+  }, [wsStatus]);
+
+  // Persist and push voice/effects once the user pauses. Storage writes sit
+  // inside the debounce too: serialising the whole rack on every slider tick
+  // was pure waste. A reconnect re-sends everything through onOpen, so the
+  // status is only consulted at fire time.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      writeStored(VOICE_STORAGE_KEY, voice);
+      writeStored(EFFECTS_STORAGE_KEY, effects);
+      if (wsStatusRef.current === 'connected') {
+        sendSettings(settingsPayloadRef.current);
+      }
+    }, SETTINGS_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [voice, effects, sendSettings]);
 
   // Bypass is a monitoring action, not a parameter tweak: send it immediately
-  // rather than through the 140 ms settings debounce, so A/B feels instant.
+  // rather than through the settings debounce, so A/B feels instant.
   useEffect(() => {
     if (wsStatus !== 'connected') return;
     sendSettings({ bypass });
@@ -239,23 +292,18 @@ export default function App() {
   useEffect(() => {
     const storedConfig = readStored(GLOBAL_SETTINGS_STORAGE_KEY);
 
+    const adopt = (cfg) => {
+      const nextRuntimeConfig = mergeRuntimeConfig(cfg, storedConfig);
+      applyConfig({
+        sample_rate: nextRuntimeConfig.sampleRate,
+        chunk_size: nextRuntimeConfig.chunkSize,
+      });
+      setRuntimeConfig(nextRuntimeConfig);
+    };
+
     fetchConfig()
-      .then((cfg) => {
-        const nextRuntimeConfig = mergeRuntimeConfig(cfg, storedConfig);
-        applyConfig({
-          sample_rate: nextRuntimeConfig.sampleRate,
-          chunk_size: nextRuntimeConfig.chunkSize,
-        });
-        setRuntimeConfig(nextRuntimeConfig);
-      })
-      .catch(() => {
-        const nextRuntimeConfig = mergeRuntimeConfig({}, storedConfig);
-        applyConfig({
-          sample_rate: nextRuntimeConfig.sampleRate,
-          chunk_size: nextRuntimeConfig.chunkSize,
-        });
-        setRuntimeConfig(nextRuntimeConfig);
-      })
+      .then(adopt)
+      .catch(() => adopt({}))
       .finally(() => connect());
     return () => {
       disconnect();
@@ -279,18 +327,27 @@ export default function App() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
-  // "B" toggles the A/B bypass, except while typing into a field.
+  // Studio shortcuts, all single letters that stay out of the way of typing:
+  // "B" toggles the A/B bypass, "R" starts/stops a take while routing runs.
+  const { isRunning, isRecording, startRecording, stopRecording } = pipeline;
   useEffect(() => {
     const handleKeyDown = (event) => {
       if (isSettingsOpen) return;
-      if (!shouldTriggerShortcut(event, 'b')) return;
-      event.preventDefault();
-      setBypass((prev) => !prev);
+      if (shouldTriggerShortcut(event, 'b')) {
+        event.preventDefault();
+        setBypass((prev) => !prev);
+        return;
+      }
+      if (shouldTriggerShortcut(event, 'r') && isRunning) {
+        event.preventDefault();
+        if (isRecording) stopRecording();
+        else startRecording();
+      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isSettingsOpen]);
+  }, [isSettingsOpen, isRunning, isRecording, startRecording, stopRecording]);
 
   // SPA-safe anchor scrolling (e.g. /#effects) once the page has rendered.
   useEffect(() => {
@@ -302,20 +359,30 @@ export default function App() {
     return () => clearTimeout(timer);
   }, []);
 
+  // While audio streams, the server's status messages carry the active model,
+  // so polling is only needed when the studio is idle — and never while the
+  // tab is in the background.
   useEffect(() => {
+    if (isRunning) return undefined;
+
+    let cancelled = false;
     const checkActiveModel = async () => {
+      if (document.hidden) return;
       try {
-        const active = await getActiveModel();
-        setActiveModel(active?.name || active?.model || null);
+        const active = await getActiveModel({ timeoutMs: ACTIVE_MODEL_POLL_MS });
+        if (!cancelled) setActiveModel(active?.name || active?.model || null);
       } catch {
-        // Server may not be ready yet.
+        // Server may not be ready yet, or is busy loading a checkpoint.
       }
     };
 
     checkActiveModel();
-    const interval = setInterval(checkActiveModel, 5000);
-    return () => clearInterval(interval);
-  }, []);
+    const interval = setInterval(checkActiveModel, ACTIVE_MODEL_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [isRunning]);
 
   useEffect(() => {
     setOnSettingsResponse?.((msg) => {
@@ -328,18 +395,11 @@ export default function App() {
     });
   }, [setOnSettingsResponse]);
 
-  // Rolling round-trip latency history for the sparkline.
+  // A stopped stream has no round trip: clear the readout and the sparkline
+  // instead of leaving the last measurement on screen.
   useEffect(() => {
-    if (latency <= 0) return;
-    setLatencyHistory((prev) => {
-      const next = [...prev, latency];
-      return next.length > 60 ? next.slice(next.length - 60) : next;
-    });
-  }, [latency]);
-
-  useEffect(() => {
-    if (!pipeline.isRunning) setLatencyHistory([]);
-  }, [pipeline.isRunning]);
+    if (!isRunning) resetLatency();
+  }, [isRunning, resetLatency]);
 
   // --- Handlers --------------------------------------------------------------
 
@@ -357,6 +417,7 @@ export default function App() {
     setVoice((prev) => ({ ...prev, ...partial }));
   }, []);
 
+  // Accepts a rack or an updater over the previous rack (see EffectsRack).
   const handleEffectsChange = useCallback((nextEffects) => {
     setActivePresetId(null);
     setEffects(nextEffects);
@@ -375,59 +436,64 @@ export default function App() {
     [voice, effects]
   );
 
+  // The next config is derived from the rendered state and its side effects
+  // (storage, transport constants, the live settings message) run once, here.
+  // Doing that inside a setState updater would repeat them: React may invoke
+  // an updater more than once and expects it to be pure.
   const handleGlobalSettingsChange = useCallback(
     (partialConfig) => {
-      setRuntimeConfig((currentConfig) => {
-        const nextRuntimeConfig = {
-          ...currentConfig,
-          sampleRate: normalizePositiveInt(partialConfig.sampleRate, currentConfig.sampleRate),
-          chunkSize: normalizePositiveInt(partialConfig.chunkSize, currentConfig.chunkSize),
-          silenceSaver: typeof partialConfig.silenceSaver === 'boolean'
-            ? partialConfig.silenceSaver
-            : currentConfig.silenceSaver,
-          silenceThresholdDb: normalizeSilenceThreshold(
-            partialConfig.silenceThresholdDb,
-            currentConfig.silenceThresholdDb
-          ),
-        };
+      const nextRuntimeConfig = {
+        ...runtimeConfig,
+        sampleRate: normalizePositiveInt(partialConfig.sampleRate, runtimeConfig.sampleRate),
+        chunkSize: normalizePositiveInt(partialConfig.chunkSize, runtimeConfig.chunkSize),
+        silenceSaver: typeof partialConfig.silenceSaver === 'boolean'
+          ? partialConfig.silenceSaver
+          : runtimeConfig.silenceSaver,
+        silenceThresholdDb: normalizeSilenceThreshold(
+          partialConfig.silenceThresholdDb,
+          runtimeConfig.silenceThresholdDb
+        ),
+      };
 
-        writeStored(GLOBAL_SETTINGS_STORAGE_KEY, {
-          sampleRate: nextRuntimeConfig.sampleRate,
-          chunkSize: nextRuntimeConfig.chunkSize,
-          silenceSaver: nextRuntimeConfig.silenceSaver,
-          silenceThresholdDb: nextRuntimeConfig.silenceThresholdDb,
-        });
-        applyConfig({
-          sample_rate: nextRuntimeConfig.sampleRate,
-          chunk_size: nextRuntimeConfig.chunkSize,
-        });
-
-        if (wsStatus === 'connected') {
-          const liveSettings = {
-            silence_saver: nextRuntimeConfig.silenceSaver,
-            silence_threshold_db: nextRuntimeConfig.silenceThresholdDb,
-          };
-          if (!pipeline.isRunning) {
-            Object.assign(liveSettings, {
-              sample_rate: nextRuntimeConfig.sampleRate,
-              chunk_size: nextRuntimeConfig.chunkSize,
-            });
-          }
-          sendSettings(liveSettings);
-        }
-
-        return nextRuntimeConfig;
+      setRuntimeConfig(nextRuntimeConfig);
+      writeStored(GLOBAL_SETTINGS_STORAGE_KEY, persistedRuntimeConfig(nextRuntimeConfig));
+      applyConfig({
+        sample_rate: nextRuntimeConfig.sampleRate,
+        chunk_size: nextRuntimeConfig.chunkSize,
       });
+
+      if (wsStatus === 'connected') {
+        const liveSettings = {
+          silence_saver: nextRuntimeConfig.silenceSaver,
+          silence_threshold_db: nextRuntimeConfig.silenceThresholdDb,
+        };
+        // Transport geometry cannot change under a live stream; it applies
+        // when the next one starts.
+        if (!isRunning) {
+          Object.assign(liveSettings, {
+            sample_rate: nextRuntimeConfig.sampleRate,
+            chunk_size: nextRuntimeConfig.chunkSize,
+          });
+        }
+        sendSettings(liveSettings);
+      }
     },
-    [pipeline.isRunning, sendSettings, wsStatus]
+    [runtimeConfig, isRunning, sendSettings, wsStatus]
   );
+
+  const openSettings = useCallback(() => setIsSettingsOpen(true), []);
+  const closeSettings = useCallback(() => {
+    setIsSettingsOpen(false);
+    // Otherwise a reload would reopen the modal the user just closed.
+    clearSettingsParam();
+  }, []);
 
   useEffect(() => {
     if (!isSettingsOpen) return undefined;
 
     const handleKeyDown = (event) => {
       if (event.key === 'Escape') {
-        setIsSettingsOpen(false);
+        closeSettings();
       }
     };
 
@@ -439,16 +505,17 @@ export default function App() {
       document.body.style.overflow = previousOverflow;
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [isSettingsOpen]);
+  }, [isSettingsOpen, closeSettings]);
 
   // --- Render ----------------------------------------------------------------
 
   const headerActions = (
     <>
+      <UpdateButton updates={updates} onClick={openSettings} />
       <GitHubStarButton />
 
       <button
-        onClick={() => setIsSettingsOpen(true)}
+        onClick={openSettings}
         /* frost-control owns the surface, border, radius, transition and focus
            ring — the previous bg/border utilities would have overridden it. */
         className="frost-control inline-flex h-8 w-8 items-center justify-center text-fg-muted hover:text-fg-secondary"
@@ -459,6 +526,17 @@ export default function App() {
       </button>
     </>
   );
+
+  // Every tab panel stays mounted and is hidden with the `hidden` attribute.
+  // Unmounting them threw away a converter's chosen file, an in-progress
+  // render, the selected microphone and open disclosure state on every tab
+  // switch — none of which the user asked to reset.
+  const panelProps = (id) => ({
+    role: 'tabpanel',
+    id: `panel-${id}`,
+    'aria-labelledby': `tab-${id}`,
+    hidden: tab !== id,
+  });
 
   return (
     <Layout
@@ -474,79 +552,85 @@ export default function App() {
       )}
       headerActions={headerActions}
     >
-      {tab === 'studio' && (
-        <div className="space-y-5 animate-fade-in-up">
-          <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
-            <div className="space-y-5">
-              <Visualizer
-                getAnalysers={pipeline.getAnalysers}
-                isRunning={pipeline.isRunning}
-                theme={theme}
-              />
-              <AudioControls
-                devices={devices}
-                pipeline={pipeline}
-                wsStatus={wsStatus}
-                activeModel={activeModel}
-                bypass={bypass}
-                onBypassChange={setBypass}
-              />
-              <Recorder pipeline={pipeline} />
-            </div>
-
-            <div className="space-y-5">
-              <MonitorDisplay
-                meters={pipeline.meters}
-                latency={latency}
-                latencyHistory={latencyHistory}
-                serverMs={serverMs}
-                serverStats={serverStats}
-                bypass={bypass}
-              />
-              <VoiceLab
-                voice={voice}
-                onChange={handleVoiceChange}
-                hasModel={Boolean(activeModel)}
-                isRunning={pipeline.isRunning}
-              />
-            </div>
+      <div {...panelProps('studio')} className="space-y-5 animate-fade-in-up">
+        <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
+          <div className="space-y-5">
+            <Visualizer
+              getAnalysers={pipeline.getAnalysers}
+              isRunning={pipeline.isRunning}
+              theme={theme}
+              active={tab === 'studio'}
+            />
+            <AudioControls
+              devices={devices}
+              pipeline={pipeline}
+              wsStatus={wsStatus}
+              activeModel={activeModel}
+              bypass={bypass}
+              onBypassChange={setBypass}
+              onRetryConnection={retryNow}
+              updateBusy={updateBusy}
+              onStartingChange={setAudioStarting}
+            />
+            <Recorder pipeline={pipeline} />
           </div>
 
-          <PresetBar
-            activePresetId={activePresetId}
-            onApplyPreset={applyPreset}
-            getCurrentSettings={getCurrentSettings}
-          />
-
-          <EffectsRack
-            effects={effects}
-            formantShift={voice.formant}
-            onEffectsChange={handleEffectsChange}
-          />
+          <div className="space-y-5">
+            <MonitorDisplay
+              meters={pipeline.meters}
+              latency={latency}
+              latencyHistory={latencyHistory}
+              serverMs={serverMs}
+              serverStats={serverStats}
+              bypass={bypass}
+            />
+            <VoiceLab
+              voice={voice}
+              onChange={handleVoiceChange}
+              hasModel={Boolean(activeModel)}
+              isRunning={pipeline.isRunning}
+              f0Methods={runtimeConfig.f0Methods}
+            />
+          </div>
         </div>
-      )}
 
-      {tab === 'models' && (
-        <div className="mx-auto max-w-4xl animate-fade-in-up">
-          <ModelManager activeModel={activeModel} onActiveModelChange={setActiveModel} />
-        </div>
-      )}
+        <PresetBar
+          activePresetId={activePresetId}
+          onApplyPreset={applyPreset}
+          getCurrentSettings={getCurrentSettings}
+        />
 
-      {tab === 'converter' && (
-        <div className="mx-auto max-w-3xl animate-fade-in-up">
-          <FileConverter
-            voice={voice}
-            effects={effects}
-            activeModel={activeModel}
-          />
-        </div>
-      )}
+        <EffectsRack
+          effects={effects}
+          formantShift={voice.formant}
+          onEffectsChange={handleEffectsChange}
+        />
+      </div>
+
+      <div {...panelProps('models')} className="mx-auto max-w-4xl animate-fade-in-up">
+        <ModelManager
+          activeModel={activeModel}
+          onActiveModelChange={setActiveModel}
+          active={tab === 'models'}
+        />
+      </div>
+
+      <div {...panelProps('converter')} className="mx-auto max-w-3xl animate-fade-in-up">
+        <FileConverter
+          voice={voice}
+          effects={effects}
+          activeModel={activeModel}
+          f0Methods={runtimeConfig.f0Methods}
+          updateBusy={updateBusy}
+          onUpdateBlockChange={setConverterBlock}
+        />
+      </div>
 
       {isSettingsOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6 sm:px-6">
           <button
             className="absolute inset-0 bg-scrim backdrop-blur-md"
-            onClick={() => setIsSettingsOpen(false)}
+            onClick={closeSettings}
             aria-label="Close settings modal"
           />
           <div className="relative max-h-[calc(100svh-2.5rem)] w-full max-w-5xl overflow-y-auto">
@@ -554,13 +638,14 @@ export default function App() {
               config={runtimeConfig}
               onChange={handleGlobalSettingsChange}
               disabled={pipeline.isRunning}
-              onClose={() => setIsSettingsOpen(false)}
+              onClose={closeSettings}
               theme={theme}
               onThemeChange={handleThemeChange}
               latencyHistory={latencyHistory}
               serverMs={serverMs}
               serverStats={serverStats}
               streamSampleRate={pipeline.streamInfo?.sampleRate}
+              updates={updates}
             />
           </div>
         </div>

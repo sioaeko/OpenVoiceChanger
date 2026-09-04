@@ -16,6 +16,7 @@ const CURRENT_VOICE = {
   filterRadius: 3,
   rmsMixRate: 0.25,
   protect: 0.33,
+  crepeHopLength: 160,
 };
 
 const TUNED_VOICE = {
@@ -26,6 +27,7 @@ const TUNED_VOICE = {
   filterRadius: 5,
   rmsMixRate: 0.8,
   protect: 0.2,
+  crepeHopLength: 128,
 };
 
 // A preset saved before the advanced fields existed, and a built-in preset:
@@ -46,6 +48,7 @@ const FULL_PRESET = {
     filter_radius: 6,
     rms_mix_rate: 0.9,
     protect: 0.05,
+    crepe_hop_length: 96,
   },
 };
 
@@ -61,6 +64,7 @@ describe('presetSettingsFromVoice', () => {
     expect(settings.filter_radius).toBe(5);
     expect(settings.rms_mix_rate).toBe(0.8);
     expect(settings.protect).toBe(0.2);
+    expect(settings.crepe_hop_length).toBe(128);
   });
 
   it('emits every declared advanced field', () => {
@@ -82,6 +86,12 @@ describe('presetSettingsFromVoice', () => {
 
   it('rounds filter radius to an integer', () => {
     expect(presetSettingsFromVoice({ ...TUNED_VOICE, filterRadius: 4.7 }, {}).filter_radius).toBe(5);
+  });
+
+  it('clamps and rounds the crepe hop length to the backend range', () => {
+    expect(presetSettingsFromVoice({ ...TUNED_VOICE, crepeHopLength: 12 }, {}).crepe_hop_length).toBe(64);
+    expect(presetSettingsFromVoice({ ...TUNED_VOICE, crepeHopLength: 4096 }, {}).crepe_hop_length).toBe(512);
+    expect(presetSettingsFromVoice({ ...TUNED_VOICE, crepeHopLength: 100.4 }, {}).crepe_hop_length).toBe(100);
   });
 
   it('omits fields it cannot use instead of writing zero', () => {
@@ -116,6 +126,7 @@ describe('voiceFromPreset', () => {
     expect(next.filterRadius).toBe(6);
     expect(next.rmsMixRate).toBe(0.9);
     expect(next.protect).toBe(0.05);
+    expect(next.crepeHopLength).toBe(96);
   });
 
   it('keeps the current advanced values for a legacy preset', () => {
@@ -130,6 +141,7 @@ describe('voiceFromPreset', () => {
     expect(next.filterRadius).toBe(TUNED_VOICE.filterRadius);
     expect(next.rmsMixRate).toBe(TUNED_VOICE.rmsMixRate);
     expect(next.protect).toBe(TUNED_VOICE.protect);
+    expect(next.crepeHopLength).toBe(TUNED_VOICE.crepeHopLength);
   });
 
   it('defaults pitch and formant to zero when the preset omits them', () => {
@@ -186,7 +198,7 @@ describe('advancedFieldsInPreset', () => {
   it('reports what a preset actually restores', () => {
     expect(advancedFieldsInPreset(LEGACY_PRESET)).toEqual([]);
     expect(advancedFieldsInPreset(FULL_PRESET).sort()).toEqual(
-      ['f0_method', 'filter_radius', 'index_rate', 'protect', 'rms_mix_rate']
+      ['crepe_hop_length', 'f0_method', 'filter_radius', 'index_rate', 'protect', 'rms_mix_rate']
     );
   });
 });

@@ -1,13 +1,16 @@
-import React, { useState } from 'react';
+import React, { memo, useState } from 'react';
 import { LoaderCircle, Pause, Play, RefreshCw } from 'lucide-react';
 
-export default function AudioControls({
+function AudioControls({
   devices,
   pipeline,
   wsStatus,
   activeModel,
   bypass = false,
   onBypassChange,
+  onRetryConnection,
+  updateBusy = false,
+  onStartingChange,
 }) {
   const [selectedInput, setSelectedInput] = useState('');
   const [selectedOutput, setSelectedOutput] = useState('');
@@ -19,11 +22,13 @@ export default function AudioControls({
 
   // A voice model is optional: without one, the stream runs through the
   // server-side DSP chain (pitch + effects) instead.
-  const canStart = wsStatus === 'connected' && !pipeline.isRunning && captureSupported;
+  const canStart = wsStatus === 'connected' && !pipeline.isRunning && captureSupported && !updateBusy;
 
   const handleStart = async () => {
+    if (!canStart) return;
     setError(null);
     setStarting(true);
+    onStartingChange?.(true);
     try {
       await devices.refresh?.();
       await pipeline.start(selectedInput || undefined, selectedOutput || undefined);
@@ -31,6 +36,7 @@ export default function AudioControls({
       setError(err.message || 'Failed to start audio pipeline');
     } finally {
       setStarting(false);
+      onStartingChange?.(false);
     }
   };
 
@@ -47,13 +53,14 @@ export default function AudioControls({
           <h2 className="panel-title">Devices & stream</h2>
         </div>
         <div className="flex items-center gap-2">
-          <span className="rounded border border-line-strong bg-control px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-fg-muted">
+          <span className="rounded border border-line bg-control px-2.5 py-1 text-[11px] font-medium text-fg-muted">
             {activeModel ? 'Model engine' : 'DSP engine'}
           </span>
           <button
             onClick={() => devices.refresh?.().catch(() => {})}
             disabled={pipeline.isRunning || devices.isRefreshing}
             className="chip-button inline-flex items-center gap-1.5"
+            aria-label="Refresh audio devices"
           >
             <RefreshCw className={`h-3.5 w-3.5 ${devices.isRefreshing ? 'animate-spin' : ''}`} aria-hidden="true" />
             {devices.isRefreshing ? 'Refreshing…' : 'Refresh'}
@@ -63,14 +70,15 @@ export default function AudioControls({
 
       <div className="mt-4 grid gap-4 sm:grid-cols-2">
         <div>
-          <label className="block text-[10px] font-semibold uppercase tracking-[0.16em] text-fg-subtle">
+          <label htmlFor="audio-input-device" className="block text-xs font-medium text-fg-muted">
             Input
           </label>
           <select
+            id="audio-input-device"
             value={selectedInput}
             onChange={(event) => setSelectedInput(event.target.value)}
             disabled={pipeline.isRunning}
-            className="native-select-safe mt-2 w-full rounded-md border border-line bg-input px-3 py-2.5 text-sm text-fg transition focus:border-line-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--frost-focus)] disabled:cursor-not-allowed disabled:opacity-50"
+            className="native-select-safe mt-2 w-full rounded-[var(--frost-radius)] border border-line bg-input px-3 py-2.5 text-sm text-fg transition focus:border-line-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--frost-focus)] disabled:cursor-not-allowed disabled:opacity-50"
           >
             <option value="">Default Microphone</option>
             {devices.inputDevices.map((device) => (
@@ -82,10 +90,11 @@ export default function AudioControls({
         </div>
 
         <div>
-          <label className="block text-[10px] font-semibold uppercase tracking-[0.16em] text-fg-subtle">
+          <label htmlFor="audio-output-device" className="block text-xs font-medium text-fg-muted">
             Output
           </label>
           <select
+            id="audio-output-device"
             value={outputSelectable ? selectedOutput : ''}
             onChange={(event) => setSelectedOutput(event.target.value)}
             disabled={pipeline.isRunning || !outputSelectable}
@@ -94,7 +103,7 @@ export default function AudioControls({
                 ? undefined
                 : 'This browser cannot route Web Audio to a specific device.'
             }
-            className="native-select-safe mt-2 w-full rounded-md border border-line bg-input px-3 py-2.5 text-sm text-fg transition focus:border-line-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--frost-focus)] disabled:cursor-not-allowed disabled:opacity-50"
+            className="native-select-safe mt-2 w-full rounded-[var(--frost-radius)] border border-line bg-input px-3 py-2.5 text-sm text-fg transition focus:border-line-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--frost-focus)] disabled:cursor-not-allowed disabled:opacity-50"
           >
             {/* Without setSinkId the browser always plays to the system default,
                 so offering a device list here would be a promise we can't keep. */}
@@ -130,30 +139,25 @@ export default function AudioControls({
 
       {/* True A/B: keeps the mic, the WebSocket and the output routing live and
           returns the raw input instead of the converted signal. */}
-      <div className="mt-5 flex items-center justify-between gap-3 rounded-md border border-line bg-raised px-3.5 py-3">
+      <div className="mt-5 flex items-center justify-between gap-3 border-t border-line pt-4">
         <div className="min-w-0">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-fg-subtle">
+          <p className="text-xs font-medium text-fg-muted">
             A/B Monitor
           </p>
           <p className="mt-1 text-[11px] text-fg-faint">
-            {bypass
-              ? 'Bypassed — hearing your raw input, conversion and effects are off.'
-              : 'Converted — model, pitch, formant and the effect rack are applied.'}
+            {bypass ? 'Original input' : 'Converted signal'}
           </p>
         </div>
         <button
           onClick={() => onBypassChange?.(!bypass)}
           role="switch"
           aria-checked={bypass}
+          aria-label="Conversion bypass"
           title="Toggle full conversion bypass (shortcut: B)"
-          className={`flex-shrink-0 rounded border px-4 py-2 text-[11px] font-bold uppercase tracking-[0.14em] transition ${
-            bypass
-              ? 'border-warn-line-strong bg-warn-bg-strong text-warn-fg hover:bg-warn-bg-strong'
-              : 'border-line-strong bg-control text-fg-muted hover:border-line-hover hover:bg-control-hover hover:text-fg'
-          }`}
+          data-tone={bypass ? 'warning' : undefined}
+          className="frost-control inline-flex h-9 min-w-[112px] flex-shrink-0 items-center justify-center px-3.5 text-xs font-medium text-fg-muted"
         >
           {bypass ? 'Bypass on' : 'Bypass off'}
-          <span className="ml-2 font-mono text-[10px] opacity-60">B</span>
         </button>
       </div>
 
@@ -162,7 +166,8 @@ export default function AudioControls({
           <button
             onClick={handleStart}
             disabled={!canStart || starting}
-            className="w-full rounded-md bg-primary px-5 py-3 text-sm font-bold uppercase tracking-[0.14em] text-primary-fg transition hover:bg-primary-hover disabled:cursor-not-allowed disabled:bg-control-hover disabled:text-fg-subtle"
+            data-tone="primary"
+            className="frost-control min-h-11 w-full px-5 py-2.5 text-sm font-semibold"
           >
             {starting ? (
               <span className="flex items-center justify-center gap-2">
@@ -179,7 +184,8 @@ export default function AudioControls({
         ) : (
           <button
             onClick={handleStop}
-            className="w-full rounded-md border border-danger-line-strong bg-danger-bg px-5 py-3 text-sm font-bold uppercase tracking-[0.14em] text-danger-fg transition hover:bg-danger-bg-strong"
+            data-tone="danger"
+            className="frost-control min-h-11 w-full px-5 py-2.5 text-sm font-semibold"
           >
             <span className="flex items-center justify-center gap-2">
               <Pause className="h-4 w-4 fill-current" aria-hidden="true" />
@@ -215,9 +221,27 @@ export default function AudioControls({
       )}
 
       {captureSupported && !pipeline.isRunning && wsStatus !== 'connected' && (
-        <p className="mt-3 text-[11px] uppercase tracking-[0.12em] text-fg-subtle">
-          Waiting for server connection…
-        </p>
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+          <p className="text-[11px] text-fg-subtle" role="status">
+            {wsStatus === 'connecting'
+              ? 'Connecting to the server…'
+              : 'Waiting for server connection — retrying automatically.'}
+          </p>
+          {/* The back-off grows to 30 s, and an attempt to an unreachable host
+              can hang in CONNECTING for a long time; either way someone who just
+              restarted the backend should not have to wait it out. retryNow
+              replaces a pending attempt rather than stacking a second one. */}
+          {onRetryConnection ? (
+            <button
+              type="button"
+              onClick={onRetryConnection}
+              className="chip-button inline-flex items-center gap-1.5"
+            >
+              <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
+              Retry now
+            </button>
+          ) : null}
+        </div>
       )}
       {!pipeline.isRunning && wsStatus === 'connected' && !activeModel && (
         <p className="mt-3 text-[11px] text-fg-subtle">
@@ -239,3 +263,5 @@ export default function AudioControls({
     </section>
   );
 }
+
+export default memo(AudioControls);

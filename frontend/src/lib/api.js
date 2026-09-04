@@ -9,16 +9,44 @@ class ApiError extends Error {
   }
 }
 
-async function request(url, options = {}) {
-  const response = await fetch(`${API_BASE}${url}`, {
-    headers: {
-      ...(options.body instanceof FormData
-        ? {}
-        : { 'Content-Type': 'application/json' }),
-      ...options.headers,
-    },
-    ...options,
-  });
+/** Message for a request that never produced a response. */
+function describeTransportError(err) {
+  if (err?.name === 'TimeoutError' || err?.name === 'AbortError') {
+    return 'The server did not respond in time.';
+  }
+  return 'Cannot reach the server. Is the backend running?';
+}
+
+/**
+ * JSON request against the API.
+ *
+ * `timeoutMs` bounds how long to wait for a response; without it a hung
+ * backend would leave the caller pending forever (the bootstrap, notably,
+ * only opens the WebSocket once /config has answered). A caller-supplied
+ * `signal` takes precedence and keeps its own abort semantics.
+ */
+async function request(url, { timeoutMs, signal, ...options } = {}) {
+  const requestSignal = signal
+    ?? (timeoutMs > 0 && typeof AbortSignal?.timeout === 'function'
+      ? AbortSignal.timeout(timeoutMs)
+      : undefined);
+
+  let response;
+  try {
+    response = await fetch(`${API_BASE}${url}`, {
+      ...options,
+      signal: requestSignal,
+      headers: {
+        ...(options.body instanceof FormData
+          ? {}
+          : { 'Content-Type': 'application/json' }),
+        ...options.headers,
+      },
+    });
+  } catch (err) {
+    if (signal) throw err;
+    throw new ApiError(describeTransportError(err), 0, null);
+  }
 
   if (!response.ok) {
     let data = null;
@@ -124,16 +152,41 @@ export async function deactivateModel() {
   });
 }
 
-export async function getActiveModel() {
-  return request('/models/active');
+// Waits on the model lock while a checkpoint loads, so the periodic poll
+// passes a timeout and the model bay (which runs after activation) does not.
+export async function getActiveModel(options = {}) {
+  return request('/models/active', options);
 }
 
+// Lock-free on the server; the bound only guards against a hung process so
+// the WebSocket still gets connected.
 export async function fetchConfig() {
-  return request('/config');
+  return request('/config', { timeoutMs: 15000 });
+}
+
+export function fetchUpdateState(options = {}) {
+  return request('/updates', { ...options, cache: 'no-store' });
+}
+
+export function checkForUpdates(options = {}) {
+  return request('/updates/check', {
+    ...options,
+    method: 'POST',
+    headers: { 'X-OpenVoiceChanger-Action': 'update' },
+  });
+}
+
+export function installUpdate(version, options = {}) {
+  return request('/updates/install', {
+    ...options,
+    method: 'POST',
+    headers: { 'X-OpenVoiceChanger-Action': 'update' },
+    body: JSON.stringify({ version }),
+  });
 }
 
 export async function fetchGitHubStarState() {
-  return request('/github/star');
+  return request('/github/star', { timeoutMs: 10000 });
 }
 
 export async function starGitHubRepository() {
@@ -146,7 +199,7 @@ export async function starGitHubRepository() {
 }
 
 export async function fetchPresets() {
-  return request('/presets/');
+  return request('/presets/', { timeoutMs: 10000 });
 }
 
 export async function savePreset(name, settings, emoji = '⭐') {
@@ -162,7 +215,13 @@ export async function deletePreset(presetId) {
   });
 }
 
-// Returns a WAV Blob of the converted audio.
+/**
+ * Returns a WAV Blob of the converted audio.
+ *
+ * A whole-file render can take minutes, so there is no timeout; pass `signal`
+ * from an AbortController to let the user cancel instead. Cancellation rejects
+ * with the browser's AbortError so the caller can tell it from a failure.
+ */
 export async function convertFile(file, {
   pitchShift = 0,
   formantShift = 0,
@@ -173,6 +232,8 @@ export async function convertFile(file, {
   filterRadius,
   rmsMixRate,
   protect,
+  crepeHopLength,
+  signal,
 } = {}) {
   const formData = new FormData();
   formData.append('file', file);
@@ -190,16 +251,24 @@ export async function convertFile(file, {
     ['filter_radius', filterRadius],
     ['rms_mix_rate', rmsMixRate],
     ['protect', protect],
+    ['crepe_hop_length', crepeHopLength],
   ]) {
     if (Number.isFinite(Number(value)) && value !== null && value !== '') {
       formData.append(field, String(value));
     }
   }
 
-  const response = await fetch(`${API_BASE}/convert/`, {
-    method: 'POST',
-    body: formData,
-  });
+  let response;
+  try {
+    response = await fetch(`${API_BASE}/convert/`, {
+      method: 'POST',
+      body: formData,
+      signal,
+    });
+  } catch (err) {
+    if (err?.name === 'AbortError') throw err;
+    throw new ApiError(describeTransportError(err), 0, null);
+  }
 
   if (!response.ok) {
     let data = null;
@@ -216,4 +285,9 @@ export async function convertFile(file, {
   }
 
   return response.blob();
+}
+
+/** True when a rejection came from the caller's own AbortController. */
+export function isAbortError(err) {
+  return err?.name === 'AbortError';
 }

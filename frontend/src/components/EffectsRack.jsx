@@ -1,26 +1,6 @@
-import React from 'react';
+import React, { memo, useCallback } from 'react';
+import Toggle from './Toggle';
 import { EFFECT_DEFS, countActiveEffects, defaultEffects } from '../lib/effects';
-
-function Toggle({ enabled, onToggle }) {
-  return (
-    <button
-      onClick={onToggle}
-      role="switch"
-      aria-checked={enabled}
-      className={`relative h-[18px] w-8 flex-shrink-0 rounded-[3px] border transition-colors duration-150 ${
-        enabled
-          ? 'border-ok-line-strong bg-ok-bg-strong'
-          : 'border-line-strong bg-input'
-      }`}
-    >
-      <span
-        className={`absolute top-1/2 h-3 w-3 -translate-y-1/2 rounded-[2px] transition-all duration-150 ${
-          enabled ? 'left-[calc(100%-15px)] bg-ok-solid' : 'left-[2px] bg-fg-faint'
-        }`}
-      />
-    </button>
-  );
-}
 
 function formatValue(param, value) {
   const num = Number(value);
@@ -28,7 +8,9 @@ function formatValue(param, value) {
   return `${text}${param.unit ? ` ${param.unit}` : ''}`;
 }
 
-function EffectCard({ def, state, onChange }) {
+// Memoized so dragging one card's slider repaints that card only, not the
+// other eleven.
+const EffectCard = memo(function EffectCard({ def, state, onChange }) {
   const enabled = Boolean(state?.enabled);
 
   return (
@@ -44,11 +26,12 @@ function EffectCard({ def, state, onChange }) {
           <p className={`truncate text-sm font-semibold ${enabled ? 'text-fg' : 'text-fg-muted'}`}>
             {def.label}
           </p>
-          <p className="truncate text-[10px] text-fg-faint">{def.tagline}</p>
+          <p className="mt-0.5 text-[11px] leading-4 text-fg-faint">{def.tagline}</p>
         </div>
         <Toggle
-          enabled={enabled}
-          onToggle={() => onChange(def.key, { ...state, enabled: !enabled })}
+          checked={enabled}
+          label={`Toggle ${def.label}`}
+          onChange={(next) => onChange(def.key, { ...state, enabled: next })}
         />
       </div>
 
@@ -57,7 +40,7 @@ function EffectCard({ def, state, onChange }) {
           {def.params.map((param) => (
             <div key={param.key}>
               <div className="flex items-center justify-between">
-                <span className="text-[10px] font-medium uppercase tracking-[0.1em] text-fg-subtle">
+                <span className="text-[11px] font-medium text-fg-subtle">
                   {param.label}
                 </span>
                 <span className="font-mono text-[11px] tabular-nums text-fg-muted">
@@ -66,6 +49,8 @@ function EffectCard({ def, state, onChange }) {
               </div>
               <input
                 type="range"
+                aria-label={`${def.label} ${param.label}`}
+                disabled={!enabled}
                 min={param.min}
                 max={param.max}
                 step={param.step}
@@ -81,14 +66,17 @@ function EffectCard({ def, state, onChange }) {
       )}
     </div>
   );
-}
+});
 
-export default function EffectsRack({ effects, formantShift = 0, onEffectsChange }) {
+// `onEffectsChange` accepts either the next rack or an updater over the
+// previous one (it is forwarded to a React state setter). The updater form
+// keeps this callback free of `effects`, and therefore stable for the cards.
+function EffectsRack({ effects, formantShift = 0, onEffectsChange }) {
   const activeCount = countActiveEffects(effects, formantShift);
 
-  const handleChange = (key, entry) => {
-    onEffectsChange({ ...effects, [key]: entry });
-  };
+  const handleChange = useCallback((key, entry) => {
+    onEffectsChange((previous) => ({ ...previous, [key]: entry }));
+  }, [onEffectsChange]);
 
   const handleBypassAll = () => {
     onEffectsChange(defaultEffects());
@@ -102,7 +90,7 @@ export default function EffectsRack({ effects, formantShift = 0, onEffectsChange
           <h2 className="panel-title">DSP chain</h2>
         </div>
         <div className="flex items-center gap-2">
-          <span className={`rounded border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
+          <span className={`rounded border px-2.5 py-1 text-[11px] font-medium ${
             activeCount > 0
               ? 'border-ok-line bg-ok-bg text-ok-fg'
               : 'border-line-strong bg-control text-fg-subtle'
@@ -134,3 +122,5 @@ export default function EffectsRack({ effects, formantShift = 0, onEffectsChange
     </section>
   );
 }
+
+export default memo(EffectsRack);

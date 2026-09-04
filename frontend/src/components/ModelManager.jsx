@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { CircleX, LoaderCircle, RefreshCw, Trash2, Upload } from 'lucide-react';
 import {
   fetchModels,
@@ -8,14 +8,10 @@ import {
   deactivateModel,
   getActiveModel,
 } from '../lib/api';
+import { formatBytes } from '../lib/format';
 
-function formatFileSize(bytes) {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
-}
+// A "Confirm" that stays armed forever is a trap for the next stray click.
+const DELETE_CONFIRM_MS = 4000;
 
 function getModelType(name) {
   if (name.endsWith('.onnx')) return 'ONNX';
@@ -29,15 +25,20 @@ function MetaBadge({ children, tone = 'default' }) {
     emerald: 'border-ok-line bg-ok-bg text-ok-fg',
   };
   return (
-    <span className={`rounded-sm border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.1em] ${tones[tone] || tones.default}`}>
+    <span className={`rounded border px-2 py-0.5 text-[11px] font-medium ${tones[tone] || tones.default}`}>
       {children}
     </span>
   );
 }
 
-export default function ModelManager({ activeModel = null, onActiveModelChange }) {
+// The active model is owned by the parent: this panel reports what the server
+// says through `onActiveModelChange` and renders `activeModel` as given, so
+// there is one source of truth instead of a local mirror to keep in step.
+//
+// `active` is true while the Models tab is showing. The panel stays mounted
+// across tab switches, so this is what triggers a fresh listing on each visit.
+function ModelManager({ activeModel = null, onActiveModelChange, active = true }) {
   const [models, setModels] = useState([]);
-  const [activeModelName, setActiveModelName] = useState(null);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -55,10 +56,8 @@ export default function ModelManager({ activeModel = null, onActiveModelChange }
         fetchModels(),
         getActiveModel(),
       ]);
-      const nextActiveModelName = active?.name || active?.model || null;
       setModels(Array.isArray(modelList) ? modelList : []);
-      setActiveModelName(nextActiveModelName);
-      onActiveModelChange?.(nextActiveModelName);
+      onActiveModelChange?.(active?.name || active?.model || null);
       setError(null);
     } catch (err) {
       setError(err.message || 'Failed to load models');
@@ -68,15 +67,17 @@ export default function ModelManager({ activeModel = null, onActiveModelChange }
   }, [onActiveModelChange]);
 
   useEffect(() => {
-    loadModels();
-  }, [loadModels]);
+    if (active) loadModels();
+  }, [active, loadModels]);
 
+  // Disarm a pending delete confirmation after a moment.
   useEffect(() => {
-    setActiveModelName(activeModel || null);
-  }, [activeModel]);
+    if (!deleteConfirm) return undefined;
+    const timer = setTimeout(() => setDeleteConfirm(null), DELETE_CONFIRM_MS);
+    return () => clearTimeout(timer);
+  }, [deleteConfirm]);
 
   const syncActiveModel = useCallback((name) => {
-    setActiveModelName(name);
     onActiveModelChange?.(name);
   }, [onActiveModelChange]);
 
@@ -109,11 +110,9 @@ export default function ModelManager({ activeModel = null, onActiveModelChange }
       for (const file of files) {
         setUploadProgress(0);
         // Real byte-level transport progress from the XHR upload stream.
-        // eslint-disable-next-line no-await-in-loop
         await uploadModel(file, setUploadProgress);
         setUploadProgress(100);
         // Keep the model list truthful even if a later file fails.
-        // eslint-disable-next-line no-await-in-loop
         await loadModels();
       }
     } catch (err) {
@@ -152,7 +151,7 @@ export default function ModelManager({ activeModel = null, onActiveModelChange }
   };
 
   const handleDeactivate = async () => {
-    setOperatingOn(activeModelName);
+    setOperatingOn(activeModel);
     setError(null);
     try {
       await deactivateModel();
@@ -175,7 +174,7 @@ export default function ModelManager({ activeModel = null, onActiveModelChange }
     setError(null);
 
     try {
-      if (activeModelName === name) {
+      if (activeModel === name) {
         await deactivateModel();
         syncActiveModel(null);
       }
@@ -199,7 +198,8 @@ export default function ModelManager({ activeModel = null, onActiveModelChange }
         <button
           onClick={loadModels}
           disabled={loading}
-          className="rounded border border-line-strong bg-control p-2 text-fg-subtle transition hover:border-line-hover hover:bg-control-hover hover:text-fg-secondary"
+          className="chip-button inline-flex h-9 w-9 items-center justify-center !p-0"
+          aria-label="Refresh models"
           title="Refresh models"
         >
           <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} aria-hidden="true" />
@@ -215,6 +215,7 @@ export default function ModelManager({ activeModel = null, onActiveModelChange }
         role="button"
         tabIndex={uploading ? -1 : 0}
         aria-label="Upload voice model files"
+        aria-disabled={uploading}
         onDrop={handleDrop}
         onDragOver={(e) => {
           e.preventDefault();
@@ -230,7 +231,7 @@ export default function ModelManager({ activeModel = null, onActiveModelChange }
           event.preventDefault();
           fileInputRef.current?.click();
         }}
-        className={`relative mt-5 cursor-pointer rounded-md border border-dashed p-7 text-center transition-all duration-200 ${
+        className={`relative mt-5 cursor-pointer rounded-lg border border-dashed p-6 text-center transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--frost-focus)] sm:p-7 ${
           dragActive
             ? 'border-line-hover bg-control-hover drag-active'
             : 'border-line-strong bg-raised hover:border-line-hover hover:bg-control'
@@ -248,7 +249,7 @@ export default function ModelManager({ activeModel = null, onActiveModelChange }
         <p className="text-sm font-medium text-fg-secondary">
           {dragActive ? 'Drop model files here' : 'Drop checkpoints or click to upload'}
         </p>
-        <p className="mt-1 text-xs uppercase tracking-[0.22em] text-fg-faint">
+        <p className="mt-1 text-xs text-fg-faint">
           .pth / .pt / .onnx + optional .index
         </p>
 
@@ -257,9 +258,9 @@ export default function ModelManager({ activeModel = null, onActiveModelChange }
             <p className="mt-3 font-mono text-[11px] tabular-nums text-fg-muted">
               {uploadProgress >= 99 ? 'Finalizing on the server…' : `Uploading… ${uploadProgress}%`}
             </p>
-            <div className="absolute inset-x-0 bottom-0 h-1 overflow-hidden rounded-b-[22px] bg-meter-track">
+            <div className="absolute inset-x-0 bottom-0 h-1 overflow-hidden rounded-b-lg bg-meter-track">
               <div
-                className="h-full bg-primary transition-all duration-150"
+                className="h-full bg-primary"
                 style={{ width: `${uploadProgress}%` }}
               />
             </div>
@@ -280,7 +281,7 @@ export default function ModelManager({ activeModel = null, onActiveModelChange }
             <LoaderCircle className="h-5 w-5 animate-spin text-fg-subtle" aria-hidden="true" />
           </div>
         ) : models.length === 0 ? (
-          <p className="rounded-md border border-line bg-raised px-4 py-8 text-center text-sm text-fg-subtle">
+          <p className="px-4 py-6 text-center text-sm text-fg-subtle">
             No models yet — upload an RVC checkpoint, or just use the DSP studio.
           </p>
         ) : (
@@ -289,20 +290,20 @@ export default function ModelManager({ activeModel = null, onActiveModelChange }
             const size = typeof model === 'object' ? (model.size_bytes ?? model.size ?? null) : null;
             const hasIndex = typeof model === 'object' && Boolean(model.has_index);
             const details = typeof model === 'object' ? model.details : null;
-            const isActive = activeModelName === name;
+            const isActive = activeModel === name;
             const isOperating = operatingOn === name;
             const type = getModelType(name);
 
             return (
               <div
                 key={name}
-                className={`rounded-md border px-4 py-4 transition ${
+                className={`rounded-lg border px-4 py-4 transition-colors ${
                   isActive
                     ? 'border-ok-line bg-ok-bg'
                     : 'border-line bg-raised hover:border-line-hover'
                 }`}
               >
-                <div className="flex items-start justify-between gap-4">
+                <div className="flex flex-col items-start justify-between gap-4 sm:flex-row">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       {isActive && (
@@ -315,7 +316,7 @@ export default function ModelManager({ activeModel = null, onActiveModelChange }
 
                     <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
                       <MetaBadge>{type}</MetaBadge>
-                      {size != null && <MetaBadge>{formatFileSize(size)}</MetaBadge>}
+                      {size != null && <MetaBadge>{formatBytes(size)}</MetaBadge>}
                       {hasIndex && <MetaBadge tone="emerald">Index</MetaBadge>}
                       {details?.version && <MetaBadge>{details.version}</MetaBadge>}
                       {details?.target_sample_rate && (
@@ -332,7 +333,8 @@ export default function ModelManager({ activeModel = null, onActiveModelChange }
                         onClick={handleDeactivate}
                         disabled={isOperating}
                         title="Click to deactivate"
-                        className="rounded border border-ok-line-strong bg-ok-bg-strong px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-ok-fg transition hover:bg-ok-bg-strong disabled:opacity-50"
+                        data-tone="success"
+                        className="frost-control min-h-8 px-3 py-1.5 text-xs font-medium"
                       >
                         {isOperating ? '…' : 'Active'}
                       </button>
@@ -340,7 +342,7 @@ export default function ModelManager({ activeModel = null, onActiveModelChange }
                       <button
                         onClick={() => handleActivate(name)}
                         disabled={isOperating}
-                        className="rounded border border-line-strong bg-control px-3 py-1.5 text-xs font-medium uppercase tracking-[0.12em] text-fg-secondary transition hover:border-line-hover hover:bg-control-hover hover:text-fg disabled:opacity-50"
+                        className="chip-button"
                       >
                         {isOperating ? 'Loading…' : 'Activate'}
                       </button>
@@ -349,11 +351,10 @@ export default function ModelManager({ activeModel = null, onActiveModelChange }
                     <button
                       onClick={() => handleDelete(name)}
                       disabled={isOperating}
-                      className={`inline-flex min-w-[84px] items-center justify-center gap-1.5 rounded border px-3 py-1.5 text-xs font-medium uppercase tracking-[0.12em] transition disabled:opacity-50 ${
-                        deleteConfirm === name
-                          ? 'border-danger-line-strong bg-danger-bg-strong text-danger-fg'
-                          : 'border-line-strong bg-control text-fg-subtle hover:border-danger-line hover:bg-danger-bg hover:text-danger-fg'
-                      }`}
+                      data-tone={deleteConfirm === name ? 'danger' : undefined}
+                      aria-label={deleteConfirm === name ? `Confirm deleting ${name}` : `Delete ${name}`}
+                      title={deleteConfirm === name ? 'Click again to delete permanently' : undefined}
+                      className="frost-control inline-flex min-h-8 min-w-[84px] items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium text-fg-muted"
                     >
                       <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                       {deleteConfirm === name ? 'Confirm' : 'Delete'}
@@ -368,3 +369,5 @@ export default function ModelManager({ activeModel = null, onActiveModelChange }
     </section>
   );
 }
+
+export default memo(ModelManager);

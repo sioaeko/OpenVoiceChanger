@@ -1,19 +1,12 @@
-import React, { useState } from 'react';
+import React, { memo, useState } from 'react';
 import { ChevronDown, RotateCcw } from 'lucide-react';
-
-const F0_METHODS = [
-  { value: 'pm', label: 'PM', description: 'Lowest latency' },
-  { value: 'harvest', label: 'Harvest', description: 'Stable tone' },
-  { value: 'crepe', label: 'Crepe', description: 'GPU quality' },
-  { value: 'rmvpe', label: 'RMVPE', description: 'Best overall' },
-  { value: 'fcpe', label: 'FCPE', description: 'Fast neural, realtime' },
-];
+import { FALLBACK_F0_METHODS, findF0Method, groupedMethods } from '../lib/f0Methods';
 
 function BigSlider({ label, value, min, max, step, unit, onChange, onReset }) {
   return (
     <div>
       <div className="flex items-center justify-between gap-3">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-fg-subtle">{label}</p>
+        <p className="text-xs font-medium text-fg-muted">{label}</p>
         <div className="flex items-center gap-2">
           <span className={`font-mono text-xl font-semibold tabular-nums tracking-normal ${value === 0 ? 'text-fg-subtle' : 'text-fg'}`}>
             {value > 0 ? '+' : ''}{Number(value).toFixed(1)}{unit}
@@ -21,7 +14,7 @@ function BigSlider({ label, value, min, max, step, unit, onChange, onReset }) {
           <button
             onClick={onReset}
             disabled={value === 0}
-            className="chip-button inline-flex h-7 w-7 items-center justify-center !p-0"
+            className="chip-button inline-flex h-8 w-8 items-center justify-center !p-0"
             aria-label={`Reset ${label}`}
             title={`Reset ${label}`}
           >
@@ -31,6 +24,7 @@ function BigSlider({ label, value, min, max, step, unit, onChange, onReset }) {
       </div>
       <input
         type="range"
+        aria-label={label}
         min={min}
         max={max}
         step={step}
@@ -51,11 +45,12 @@ function MiniSlider({ label, value, min, max, step, onChange, format = (v) => v.
   return (
     <div>
       <div className="flex items-center justify-between">
-        <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-fg-subtle">{label}</span>
+        <span className="text-xs font-medium text-fg-muted">{label}</span>
         <span className="font-mono text-xs tabular-nums text-fg-secondary">{format(Number(value))}</span>
       </div>
       <input
         type="range"
+        aria-label={label}
         min={min}
         max={max}
         step={step}
@@ -67,8 +62,10 @@ function MiniSlider({ label, value, min, max, step, onChange, format = (v) => v.
   );
 }
 
-export default function VoiceLab({ voice, onChange, hasModel, isRunning }) {
+function VoiceLab({ voice, onChange, hasModel, isRunning, f0Methods = FALLBACK_F0_METHODS }) {
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const selectedMethod = findF0Method(f0Methods, voice.f0Method);
+  const liveGroups = groupedMethods(f0Methods, 'realtime');
 
   return (
     <section className="panel p-5">
@@ -77,7 +74,7 @@ export default function VoiceLab({ voice, onChange, hasModel, isRunning }) {
           <p className="panel-kicker">Voice Lab</p>
           <h2 className="panel-title">Pitch & timbre</h2>
         </div>
-        <span className={`rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
+        <span className={`rounded border px-2 py-1 text-[11px] font-medium ${
           isRunning
             ? 'border-ok-line bg-ok-bg text-ok-fg'
             : 'border-line-strong bg-control text-fg-subtle'
@@ -112,36 +109,39 @@ export default function VoiceLab({ voice, onChange, hasModel, isRunning }) {
       </div>
 
       <div className="mt-6 border-t border-line pt-5">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-fg-subtle">
+        <label htmlFor="voice-f0-method" className="block text-xs font-medium text-fg-muted">
           F0 Method {hasModel ? '' : '· needs an RVC model'}
-        </p>
-        <div className="mt-3 grid grid-cols-2 gap-2">
-          {F0_METHODS.map((method) => {
-            const selected = voice.f0Method === method.value;
-            return (
-              <button
-                key={method.value}
-                onClick={() => onChange({ f0Method: method.value })}
-                className={`rounded-md border px-3 py-2.5 text-left transition ${
-                  selected
-                    ? 'border-line-hover bg-control-hover text-fg'
-                    : 'border-line bg-raised text-fg-muted hover:border-line-hover hover:text-fg-secondary'
-                }`}
-              >
-                <p className="text-sm font-semibold leading-tight">{method.label}</p>
-                <p className={`mt-0.5 text-[11px] ${selected ? 'text-fg-muted' : 'text-fg-faint'}`}>
-                  {method.description}
-                </p>
-              </button>
-            );
-          })}
+        </label>
+        <select
+          id="voice-f0-method"
+          value={selectedMethod.id}
+          onChange={(event) => onChange({ f0Method: event.target.value })}
+          className="native-select-safe mt-3 w-full rounded-lg border border-line-strong bg-input px-3 py-2.5 text-sm text-fg focus:border-line-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--frost-focus)]"
+        >
+          {liveGroups.map((group) => (
+            <optgroup key={group.section} label={group.section}>
+              {group.methods.map((method) => (
+                <option key={method.id} value={method.id} disabled={!method.available}>
+                  {method.label}{method.available ? '' : ' — unavailable'}
+                </option>
+              ))}
+            </optgroup>
+          ))}
+        </select>
+        <div className="mt-2 flex items-start justify-between gap-3">
+          <p className="text-[11px] leading-4 text-fg-subtle">{selectedMethod.description}</p>
+          <span className={`flex-shrink-0 text-[11px] font-medium ${selectedMethod.available ? 'text-ok-fg' : 'text-warn-fg'}`}>
+            {selectedMethod.available ? 'Ready' : selectedMethod.reason}
+          </span>
         </div>
       </div>
 
       <div className="mt-5 border-t border-line pt-4">
         <button
           onClick={() => setShowAdvanced((v) => !v)}
-          className="flex w-full items-center justify-between text-[10px] font-semibold uppercase tracking-[0.18em] text-fg-subtle transition hover:text-fg-secondary"
+          aria-expanded={showAdvanced}
+          aria-controls="rvc-advanced-controls"
+          className="frost-control flex min-h-9 w-full items-center justify-between px-3 py-2 text-xs font-medium text-fg-muted hover:text-fg"
         >
           RVC Advanced
           <ChevronDown
@@ -151,7 +151,7 @@ export default function VoiceLab({ voice, onChange, hasModel, isRunning }) {
         </button>
 
         {showAdvanced && (
-          <div className="mt-4 space-y-4">
+          <div id="rvc-advanced-controls" className="mt-4 space-y-4">
             <MiniSlider
               label="Index Rate"
               value={voice.indexRate}
@@ -185,10 +185,21 @@ export default function VoiceLab({ voice, onChange, hasModel, isRunning }) {
               step={0.01}
               onChange={(value) => onChange({ protect: value })}
             />
+            {voice.f0Method?.startsWith('mangio-crepe') ? (
+              <MiniSlider
+                label="Crepe Hop Length"
+                value={voice.crepeHopLength}
+                min={64}
+                max={512}
+                step={16}
+                onChange={(value) => onChange({ crepeHopLength: value })}
+                format={(value) => `${Math.round(value)} samples`}
+              />
+            ) : null}
             <p className="text-[11px] leading-4 text-fg-faint">
               Index rate blends retrieval features, RMS mix follows input loudness,
               protect preserves breaths and consonants. Filter radius median-smooths
-              the harvest pitch track — values below 3 disable it.
+              the Harvest and DIO pitch tracks — values below 3 disable it.
             </p>
           </div>
         )}
@@ -196,3 +207,5 @@ export default function VoiceLab({ voice, onChange, hasModel, isRunning }) {
     </section>
   );
 }
+
+export default memo(VoiceLab);

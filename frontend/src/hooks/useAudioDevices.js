@@ -111,7 +111,7 @@ export default function useAudioDevices() {
     };
   }, [enumerate]);
 
-  return {
+  return useMemo(() => ({
     inputDevices,
     outputDevices,
     refresh,
@@ -122,5 +122,8 @@ export default function useAudioDevices() {
     captureSupported: support.supported,
     insecureContext: Boolean(support.insecureContext),
     outputSelectionSupported,
-  };
+  }), [
+    inputDevices, outputDevices, refresh, isRefreshing, hasLabels, permissionState, error,
+    support.supported, support.insecureContext, outputSelectionSupported,
+  ]);
 }

@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { SAMPLE_RATE, CHUNK_SIZE } from '../lib/constants';
 import { encodeWav } from '../lib/wav';
+import { formatFileTimestamp } from '../lib/format';
 import { createMeterStore, rms } from '../lib/meters';
 import {
   MAX_RECORD_SECONDS,
@@ -16,10 +17,18 @@ import {
   supportsOutputDeviceSelection,
 } from '../lib/audioSupport';
 
+// The worklet ships from public/ so it resolves relative to the app's base
+// URL, wherever the studio happens to be mounted.
+const WORKLET_URL = `${import.meta.env.BASE_URL}audioWorklet.js`;
+
 export default function useAudioPipeline(wsHook) {
+  // Only the stable callbacks are needed here. Depending on the whole hook
+  // object would recreate start/stop every time a latency sample arrives.
+  const { sendAudio, setOnAudioReceived, setStreamSampleRate } = wsHook;
+
   const [isRunning, setIsRunning] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
-  const [lastRecording, setLastRecording] = useState(null); // {url, seconds, size}
+  const [lastRecording, setLastRecording] = useState(null); // {url, seconds, size, fileName}
   const [recordNotice, setRecordNotice] = useState(null); // {tone, message}
   const [streamInfo, setStreamInfo] = useState(null); // {sampleRate, requestedSampleRate, inputFallback}
 
@@ -51,31 +60,33 @@ export default function useAudioPipeline(wsHook) {
 
   const outputSelectionSupported = useMemo(() => supportsOutputDeviceSelection(), []);
 
-  const stopRef = useRef(null);
-  const finalizeRecordingRef = useRef(null);
+  // Starts the animation-rate meter loop; stop() cancels it via animFrameRef.
+  const startLevelLoop = useCallback(() => {
+    function tick() {
+      let input = 0;
+      let output = 0;
 
-  const updateLevels = useCallback(() => {
-    let input = 0;
-    let output = 0;
+      if (inputAnalyserRef.current && inputBufferRef.current) {
+        inputAnalyserRef.current.getFloatTimeDomainData(inputBufferRef.current);
+        input = rms(inputBufferRef.current);
+      }
+      if (outputAnalyserRef.current && outputBufferRef.current) {
+        outputAnalyserRef.current.getFloatTimeDomainData(outputBufferRef.current);
+        output = rms(outputBufferRef.current);
+      }
 
-    if (inputAnalyserRef.current && inputBufferRef.current) {
-      inputAnalyserRef.current.getFloatTimeDomainData(inputBufferRef.current);
-      input = rms(inputBufferRef.current);
+      meters.set({
+        input,
+        output,
+        recordSeconds: recordingRef.current
+          ? recordSamplesRef.current / sampleRateRef.current
+          : 0,
+      });
+
+      animFrameRef.current = requestAnimationFrame(tick);
     }
-    if (outputAnalyserRef.current && outputBufferRef.current) {
-      outputAnalyserRef.current.getFloatTimeDomainData(outputBufferRef.current);
-      output = rms(outputBufferRef.current);
-    }
 
-    meters.set({
-      input,
-      output,
-      recordSeconds: recordingRef.current
-        ? recordSamplesRef.current / sampleRateRef.current
-        : 0,
-    });
-
-    animFrameRef.current = requestAnimationFrame(updateLevels);
+    animFrameRef.current = requestAnimationFrame(tick);
   }, [meters]);
 
   const finalizeRecording = useCallback((notice = null) => {
@@ -100,6 +111,8 @@ export default function useAudioPipeline(wsHook) {
           url: URL.createObjectURL(blob),
           seconds: samples / sampleRateRef.current,
           size: blob.size,
+          // Named once, when the take ends, so the download keeps one name.
+          fileName: `voice-take-${formatFileTimestamp()}.wav`,
         };
       } catch (err) {
         console.error('Failed to encode recording:', err);
@@ -120,11 +133,10 @@ export default function useAudioPipeline(wsHook) {
     setRecordNotice(notice);
     return recording;
   }, [meters]);
-  finalizeRecordingRef.current = finalizeRecording;
 
   const stop = useCallback(() => {
     if (recordingRef.current) {
-      finalizeRecordingRef.current?.();
+      finalizeRecording();
     }
 
     if (animFrameRef.current) {
@@ -155,7 +167,13 @@ export default function useAudioPipeline(wsHook) {
     playbackNodeRef.current?.port?.close?.();
 
     streamRef.current?.getTracks().forEach((track) => track.stop());
-    audioContextRef.current?.close();
+    // close() rejects if the context is already closed (a failed start that
+    // never resumed it, or a second stop) — that is not worth an unhandled
+    // rejection in the console.
+    const context = audioContextRef.current;
+    if (context && context.state !== 'closed') {
+      context.close().catch(() => {});
+    }
 
     audioContextRef.current = null;
     captureSinkRef.current = null;
@@ -168,13 +186,12 @@ export default function useAudioPipeline(wsHook) {
     inputBufferRef.current = null;
     outputBufferRef.current = null;
 
-    wsHook.setOnAudioReceived(null);
+    setOnAudioReceived(null);
 
     meters.set({ input: 0, output: 0, recordSeconds: 0 });
     setStreamInfo(null);
     setIsRunning(false);
-  }, [wsHook, meters]);
-  stopRef.current = stop;
+  }, [finalizeRecording, setOnAudioReceived, meters]);
 
   const start = useCallback(
     async (inputDeviceId, outputDeviceId) => {
@@ -239,7 +256,7 @@ export default function useAudioPipeline(wsHook) {
         const source = audioContext.createMediaStreamSource(stream);
         sourceRef.current = source;
 
-        await audioContext.audioWorklet.addModule('/audioWorklet.js');
+        await audioContext.audioWorklet.addModule(WORKLET_URL);
 
         const captureNode = new AudioWorkletNode(audioContext, 'capture-processor', {
           processorOptions: { chunkSize: CHUNK_SIZE },
@@ -277,17 +294,17 @@ export default function useAudioPipeline(wsHook) {
 
         // Tell the server the rate we are really streaming at before any audio
         // goes out, so the first chunk is interpreted correctly.
-        wsHook.setStreamSampleRate?.(actualSampleRate);
+        setStreamSampleRate?.(actualSampleRate);
 
         seqNumRef.current = 0;
         captureNode.port.onmessage = (event) => {
           const buffer = event.data;
           if (buffer instanceof Float32Array) {
-            wsHook.sendAudio(buffer, seqNumRef.current++);
+            sendAudio(buffer, seqNumRef.current++);
           }
         };
 
-        wsHook.setOnAudioReceived((pcmData) => {
+        setOnAudioReceived((pcmData) => {
           if (playbackNodeRef.current) {
             playbackNodeRef.current.port.postMessage(pcmData);
           }
@@ -304,7 +321,7 @@ export default function useAudioPipeline(wsHook) {
           recordSamplesRef.current = samples;
 
           if (full) {
-            finalizeRecordingRef.current?.({
+            finalizeRecording({
               tone: 'warning',
               message: `Recording stopped at the ${formatRecordLimit()} limit — the take was saved.`,
             });
@@ -312,7 +329,7 @@ export default function useAudioPipeline(wsHook) {
         });
 
         await audioContext.resume();
-        animFrameRef.current = requestAnimationFrame(updateLevels);
+        startLevelLoop();
 
         setStreamInfo({
           sampleRate: actualSampleRate,
@@ -322,11 +339,14 @@ export default function useAudioPipeline(wsHook) {
         setIsRunning(true);
       } catch (err) {
         console.error('Failed to start audio pipeline:', err);
-        stopRef.current?.();
-        throw new Error(describeGetUserMediaError(err));
+        stop();
+        throw new Error(describeGetUserMediaError(err), { cause: err });
       }
     },
-    [wsHook, updateLevels, outputSelectionSupported]
+    [
+      sendAudio, setOnAudioReceived, setStreamSampleRate, startLevelLoop, finalizeRecording,
+      stop, outputSelectionSupported,
+    ]
   );
 
   const startRecording = useCallback(() => {
@@ -356,7 +376,9 @@ export default function useAudioPipeline(wsHook) {
     output: outputAnalyserRef.current,
   }), []);
 
-  return {
+  // Stable identity between state changes, so memoized panels that receive the
+  // whole pipeline do not re-render on unrelated App updates.
+  return useMemo(() => ({
     start,
     stop,
     isRunning,
@@ -371,5 +393,8 @@ export default function useAudioPipeline(wsHook) {
     maxRecordSeconds: MAX_RECORD_SECONDS,
     outputSelectionSupported,
     streamInfo,
-  };
+  }), [
+    start, stop, isRunning, meters, getAnalysers, isRecording, lastRecording, recordNotice,
+    startRecording, stopRecording, discardRecording, outputSelectionSupported, streamInfo,
+  ]);
 }

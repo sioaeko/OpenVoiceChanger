@@ -9,6 +9,7 @@
 // presets already had.
 
 import { effectsFromPreset } from './effects';
+import { F0_METHOD_IDS } from './f0Methods';
 
 // preset field -> voice field, with the range the backend clamps to.
 export const ADVANCED_FIELD_MAP = [
@@ -16,9 +17,10 @@ export const ADVANCED_FIELD_MAP = [
   { preset: 'filter_radius', voice: 'filterRadius', min: 0, max: 7, integer: true },
   { preset: 'rms_mix_rate', voice: 'rmsMixRate', min: 0, max: 1 },
   { preset: 'protect', voice: 'protect', min: 0, max: 0.5 },
+  { preset: 'crepe_hop_length', voice: 'crepeHopLength', min: 64, max: 512, integer: true },
 ];
 
-export const F0_METHODS = ['pm', 'harvest', 'crepe', 'rmvpe', 'fcpe'];
+export const F0_METHODS = F0_METHOD_IDS;
 
 function clampNumber(value, { min, max, integer }) {
   const number = Number(value);

@@ -1,81 +1,86 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { WS_URL, SAMPLE_RATE, CHUNK_SIZE } from '../lib/constants';
+import { createFrameScheduler } from '../lib/frameQueue';
 
-const MAX_IN_FLIGHT_AUDIO_FRAMES = 1;
-const MAX_PENDING_AUDIO_FRAMES = 2;
+// Round-trip samples kept for the sparkline and the profile recommendation.
+const MAX_LATENCY_SAMPLES = 60;
+// How often latency/serverMs reach React state. Audio replies arrive per chunk
+// (10-40 per second); pushing each one through setState would re-render the
+// whole studio at frame rate, and a readout that flickers 40x a second is not
+// more informative than one that updates 4x a second.
+const UI_FLUSH_INTERVAL_MS = 250;
+const RECONNECT_INITIAL_MS = 1000;
+const RECONNECT_MAX_MS = 30000;
+
+const DEFAULT_SERVER_STATS = {
+  modelMs: 0,
+  dspMs: 0,
+  mode: 'dsp',
+  activeModel: null,
+  effectsActive: 0,
+  bypass: false,
+  silenceSaver: true,
+  silenceThresholdDb: -52,
+  inferenceSleeping: false,
+  inferenceDutyPercent: 0,
+};
+
+function transmitFrame(ws, buffer, seqNum) {
+  const headerSize = 8;
+  const frame = new ArrayBuffer(headerSize + buffer.byteLength);
+  const view = new DataView(frame);
+  view.setUint32(0, seqNum, true);
+  view.setUint32(4, 0, true);
+  new Float32Array(frame, headerSize).set(buffer);
+  ws.send(frame);
+}
 
 export default function useWebSocket() {
   const [status, setStatus] = useState('disconnected');
   const [latency, setLatency] = useState(0);
+  const [latencyHistory, setLatencyHistory] = useState([]);
   const [serverMs, setServerMs] = useState(0);
   // Server-reported processing breakdown (from periodic status messages).
-  const [serverStats, setServerStats] = useState({
-    modelMs: 0,
-    dspMs: 0,
-    mode: 'dsp',
-    activeModel: null,
-    effectsActive: 0,
-    bypass: false,
-    silenceSaver: true,
-    silenceThresholdDb: -52,
-    inferenceSleeping: false,
-    inferenceDutyPercent: 0,
-  });
+  const [serverStats, setServerStats] = useState(DEFAULT_SERVER_STATS);
 
   const wsRef = useRef(null);
+  const connectRef = useRef(null);
   const onAudioReceivedRef = useRef(null);
   const onSettingsResponseRef = useRef(null);
   const onOpenRef = useRef(null);
   const reconnectTimerRef = useRef(null);
-  const reconnectDelayRef = useRef(1000);
+  const reconnectDelayRef = useRef(RECONNECT_INITIAL_MS);
   const intentionalCloseRef = useRef(false);
-  const sendTimestampsRef = useRef(new Map());
-  const pendingAudioFramesRef = useRef([]);
-  const lastServerMsUpdateRef = useRef(0);
+  const schedulerRef = useRef(null);
+  if (schedulerRef.current == null) schedulerRef.current = createFrameScheduler();
+
+  // Per-frame measurements accumulate here and reach React state in batches.
+  const latestLatencyRef = useRef(0);
+  const latestServerMsRef = useRef(0);
+  const historyRef = useRef([]);
+  const lastFlushRef = useRef(0);
   // Rate the live AudioContext actually runs at, once a stream has started.
   // Null until then, when the configured default is the best guess we have.
   const streamSampleRateRef = useRef(null);
 
-  const sendBinaryFrame = useCallback((ws, buffer, seqNum) => {
-    sendTimestampsRef.current.set(seqNum, performance.now());
-
-    const headerSize = 8;
-    const frame = new ArrayBuffer(headerSize + buffer.byteLength);
-    const view = new DataView(frame);
-    view.setUint32(0, seqNum, true);
-    view.setUint32(4, 0, true);
-
-    const pcm = new Float32Array(frame, headerSize);
-    pcm.set(buffer);
-
-    ws.send(frame);
+  const flushMeasurements = useCallback((now, force = false) => {
+    if (!force && now - lastFlushRef.current < UI_FLUSH_INTERVAL_MS) return;
+    lastFlushRef.current = now;
+    setLatency(latestLatencyRef.current);
+    setServerMs(latestServerMsRef.current);
+    setLatencyHistory(historyRef.current.slice());
   }, []);
 
-  const enqueuePendingAudio = useCallback((buffer, seqNum) => {
-    const nextQueue = [
-      ...pendingAudioFramesRef.current,
-      { buffer: buffer.slice(0), seqNum },
-    ];
-
-    while (nextQueue.length > MAX_PENDING_AUDIO_FRAMES) {
-      nextQueue.shift();
-    }
-
-    pendingAudioFramesRef.current = nextQueue;
+  /** Clear the round-trip readout, e.g. when the audio stream stops. */
+  const resetLatency = useCallback(() => {
+    latestLatencyRef.current = 0;
+    latestServerMsRef.current = 0;
+    historyRef.current = [];
+    lastFlushRef.current = 0;
+    setLatency(0);
+    setServerMs(0);
+    setLatencyHistory([]);
   }, []);
-
-  const flushPendingAudio = useCallback(() => {
-    const ws = wsRef.current;
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
-
-    while (
-      sendTimestampsRef.current.size < MAX_IN_FLIGHT_AUDIO_FRAMES
-      && pendingAudioFramesRef.current.length > 0
-    ) {
-      const next = pendingAudioFramesRef.current.shift();
-      sendBinaryFrame(ws, next.buffer, next.seqNum);
-    }
-  }, [sendBinaryFrame]);
 
   const clearReconnectTimer = useCallback(() => {
     if (reconnectTimerRef.current) {
@@ -90,13 +95,15 @@ export default function useWebSocket() {
     clearReconnectTimer();
     const delay = reconnectDelayRef.current;
     reconnectTimerRef.current = setTimeout(() => {
-      connect();
+      reconnectTimerRef.current = null;
+      connectRef.current?.();
     }, delay);
-    reconnectDelayRef.current = Math.min(delay * 2, 30000);
+    reconnectDelayRef.current = Math.min(delay * 2, RECONNECT_MAX_MS);
   }, [clearReconnectTimer]);
 
   const connect = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
+    if (wsRef.current?.readyState === WebSocket.CONNECTING) return;
 
     intentionalCloseRef.current = false;
     setStatus('connecting');
@@ -107,10 +114,9 @@ export default function useWebSocket() {
 
       ws.onopen = () => {
         setStatus('connected');
-        reconnectDelayRef.current = 1000;
+        reconnectDelayRef.current = RECONNECT_INITIAL_MS;
         clearReconnectTimer();
-        pendingAudioFramesRef.current = [];
-        sendTimestampsRef.current.clear();
+        schedulerRef.current.reset();
 
         // Re-announce the live stream's real rate after a reconnect, so the
         // server never resumes processing with a stale assumption.
@@ -130,27 +136,21 @@ export default function useWebSocket() {
           const view = new DataView(event.data);
           const seqNum = view.getUint32(0, true);
           const serverHundredthsMs = view.getUint32(4, true);
-          const sendTime = sendTimestampsRef.current.get(seqNum);
-
-          if (sendTime) {
-            setLatency(performance.now() - sendTime);
-            sendTimestampsRef.current.delete(seqNum);
-          }
-
           const now = performance.now();
-          if (now - lastServerMsUpdateRef.current > 250) {
-            setServerMs(serverHundredthsMs / 100);
-            lastServerMsUpdateRef.current = now;
-          }
 
-          flushPendingAudio();
-
-          if (sendTimestampsRef.current.size > 100) {
-            const keys = [...sendTimestampsRef.current.keys()].sort((a, b) => a - b);
-            for (let i = 0; i < keys.length - 50; i += 1) {
-              sendTimestampsRef.current.delete(keys[i]);
+          const { rttMs, send } = schedulerRef.current.acknowledge(seqNum, now);
+          if (rttMs !== null) {
+            latestLatencyRef.current = rttMs;
+            const history = historyRef.current;
+            history.push(rttMs);
+            if (history.length > MAX_LATENCY_SAMPLES) {
+              history.splice(0, history.length - MAX_LATENCY_SAMPLES);
             }
           }
+          latestServerMsRef.current = serverHundredthsMs / 100;
+          flushMeasurements(now);
+
+          for (const next of send) transmitFrame(ws, next.buffer, next.seqNum);
 
           const pcmData = new Float32Array(event.data, 8);
           onAudioReceivedRef.current?.(pcmData, seqNum);
@@ -185,15 +185,10 @@ export default function useWebSocket() {
       };
 
       ws.onclose = () => {
-        wsRef.current = null;
-        pendingAudioFramesRef.current = [];
-        sendTimestampsRef.current.clear();
-        if (!intentionalCloseRef.current) {
-          setStatus('disconnected');
-          scheduleReconnect();
-        } else {
-          setStatus('disconnected');
-        }
+        if (wsRef.current === ws) wsRef.current = null;
+        schedulerRef.current.reset();
+        setStatus('disconnected');
+        if (!intentionalCloseRef.current) scheduleReconnect();
       };
 
       wsRef.current = ws;
@@ -201,13 +196,18 @@ export default function useWebSocket() {
       setStatus('error');
       scheduleReconnect();
     }
-  }, [clearReconnectTimer, flushPendingAudio, scheduleReconnect]);
+  }, [clearReconnectTimer, flushMeasurements, scheduleReconnect]);
+
+  // The reconnect timer fires long after any render, so an effect-synced ref
+  // is the right way for it to reach the current connect().
+  useEffect(() => {
+    connectRef.current = connect;
+  }, [connect]);
 
   const disconnect = useCallback(() => {
     intentionalCloseRef.current = true;
     clearReconnectTimer();
-    pendingAudioFramesRef.current = [];
-    sendTimestampsRef.current.clear();
+    schedulerRef.current.reset();
     if (wsRef.current) {
       wsRef.current.close();
       wsRef.current = null;
@@ -215,17 +215,35 @@ export default function useWebSocket() {
     setStatus('disconnected');
   }, [clearReconnectTimer]);
 
+  /** Skip the remaining back-off and try to connect right away. */
+  const retryNow = useCallback(() => {
+    clearReconnectTimer();
+    reconnectDelayRef.current = RECONNECT_INITIAL_MS;
+
+    // Abandon an attempt that is still hanging in CONNECTING (an unreachable
+    // host can sit there for a long time). Its handlers are detached first so
+    // the eventual close cannot schedule a competing reconnect.
+    const current = wsRef.current;
+    if (current && current.readyState !== WebSocket.OPEN) {
+      current.onopen = null;
+      current.onmessage = null;
+      current.onerror = null;
+      current.onclose = null;
+      wsRef.current = null;
+      try {
+        current.close();
+      } catch { /* already closing */ }
+    }
+    connect();
+  }, [clearReconnectTimer, connect]);
+
   const sendAudio = useCallback((buffer, seqNum) => {
     const ws = wsRef.current;
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
 
-    if (sendTimestampsRef.current.size >= MAX_IN_FLIGHT_AUDIO_FRAMES) {
-      enqueuePendingAudio(buffer, seqNum);
-      return;
-    }
-
-    sendBinaryFrame(ws, buffer, seqNum);
-  }, [enqueuePendingAudio, sendBinaryFrame]);
+    const send = schedulerRef.current.offer({ buffer, seqNum }, performance.now());
+    for (const next of send) transmitFrame(ws, next.buffer, next.seqNum);
+  }, []);
 
   const sendSettings = useCallback((settings) => {
     const ws = wsRef.current;
@@ -253,10 +271,13 @@ export default function useWebSocket() {
     onOpenRef.current = callback;
   }, []);
 
-  return {
+  // A stable object lets consumers (and React.memo) depend on the fields they
+  // use instead of a fresh wrapper every render.
+  return useMemo(() => ({
     status,
     connect,
     disconnect,
+    retryNow,
     sendAudio,
     sendSettings,
     setStreamSampleRate,
@@ -264,7 +285,13 @@ export default function useWebSocket() {
     setOnSettingsResponse,
     setOnOpen,
     latency,
+    latencyHistory,
     serverMs,
     serverStats,
-  };
+    resetLatency,
+  }), [
+    status, connect, disconnect, retryNow, sendAudio, sendSettings, setStreamSampleRate,
+    setOnAudioReceived, setOnSettingsResponse, setOnOpen, latency, latencyHistory,
+    serverMs, serverStats, resetLatency,
+  ]);
 }

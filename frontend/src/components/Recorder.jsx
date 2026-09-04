@@ -1,18 +1,7 @@
-import React, { useEffect, useRef } from 'react';
+import React, { memo, useEffect, useRef } from 'react';
 import { Circle, Download, Square, Trash2 } from 'lucide-react';
 import { formatRecordLimit } from '../lib/recording';
-
-function formatDuration(seconds) {
-  const total = Math.floor(seconds);
-  const m = Math.floor(total / 60);
-  const s = total % 60;
-  return `${m}:${String(s).padStart(2, '0')}`;
-}
-
-function formatSize(bytes) {
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
+import { formatBytes, formatDuration } from '../lib/format';
 
 // The elapsed counter ticks at animation rate. It subscribes to the pipeline's
 // meter store and writes the text itself, so a running recording never
@@ -36,7 +25,7 @@ function RecordTimer({ meters }) {
 }
 
 // Records the converted output stream and offers a WAV download.
-export default function Recorder({ pipeline }) {
+function Recorder({ pipeline }) {
   const { isRunning, isRecording, lastRecording, recordNotice, meters, maxRecordSeconds } = pipeline;
 
   return (
@@ -55,7 +44,9 @@ export default function Recorder({ pipeline }) {
             </span>
             <button
               onClick={() => pipeline.stopRecording()}
-              className="inline-flex items-center gap-2 rounded border border-danger-line-strong bg-danger-bg px-4 py-2 text-[11px] font-bold uppercase tracking-[0.14em] text-danger-fg transition hover:bg-danger-bg-strong"
+              data-tone="danger"
+              title="Stop recording (shortcut: R)"
+              className="frost-control inline-flex h-9 items-center gap-2 px-4 text-xs font-semibold"
             >
               <Square className="h-3 w-3 fill-current" aria-hidden="true" />
               Stop
@@ -65,8 +56,9 @@ export default function Recorder({ pipeline }) {
           <button
             onClick={() => pipeline.startRecording()}
             disabled={!isRunning}
-            className="inline-flex items-center gap-2 rounded border border-danger-line bg-danger-bg px-4 py-2 text-[11px] font-bold uppercase tracking-[0.14em] text-danger-fg transition hover:bg-danger-bg-strong disabled:cursor-not-allowed disabled:border-line-strong disabled:bg-control disabled:text-fg-faint"
-            title={isRunning ? 'Record the converted output' : 'Start routing first'}
+            data-tone="danger"
+            className="frost-control inline-flex h-9 items-center gap-2 px-4 text-xs font-semibold"
+            title={isRunning ? 'Record the converted output (shortcut: R)' : 'Start routing first'}
           >
             <Circle className="h-3 w-3 fill-current" aria-hidden="true" />
             Record
@@ -76,6 +68,7 @@ export default function Recorder({ pipeline }) {
 
       {recordNotice && (
         <div
+          role="status"
           className={`mt-3 rounded-md border p-3 ${
             recordNotice.tone === 'error'
               ? 'border-danger-line bg-danger-bg'
@@ -89,16 +82,16 @@ export default function Recorder({ pipeline }) {
       )}
 
       {lastRecording ? (
-        <div className="mt-4 rounded-md border border-line bg-input p-3.5">
+        <div className="mt-4 border-t border-line pt-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-fg-subtle">
-              Last take · {formatDuration(lastRecording.seconds)} · {formatSize(lastRecording.size)}
+            <p className="text-xs font-medium text-fg-subtle">
+              Last take · {formatDuration(lastRecording.seconds)} · {formatBytes(lastRecording.size)}
             </p>
             <div className="flex items-center gap-2">
               <a
                 href={lastRecording.url}
-                download={`voice-take-${Date.now()}.wav`}
-                className="chip-button inline-flex items-center gap-1.5 !normal-case"
+                download={lastRecording.fileName || 'voice-take.wav'}
+                className="chip-button inline-flex items-center gap-1.5"
               >
                 <Download className="h-3.5 w-3.5" aria-hidden="true" />
                 Download WAV
@@ -125,3 +118,5 @@ export default function Recorder({ pipeline }) {
     </section>
   );
 }
+
+export default memo(Recorder);

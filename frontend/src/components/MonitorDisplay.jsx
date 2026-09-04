@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { memo, useEffect, useMemo, useRef } from 'react';
 import { Pause } from 'lucide-react';
 import { levelToPercent, nextPeak } from '../lib/meters';
 
@@ -110,13 +110,13 @@ function Sparkline({ history }) {
 function StatChip({ label, value }) {
   return (
     <div className="rounded border border-line bg-input px-3 py-2 text-center">
-      <p className="text-[9px] font-semibold uppercase tracking-[0.14em] text-fg-subtle">{label}</p>
+      <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-fg-subtle">{label}</p>
       <p className="mt-1 font-mono text-sm font-semibold tabular-nums text-fg-secondary">{value}</p>
     </div>
   );
 }
 
-export default function MonitorDisplay({
+function MonitorDisplay({
   meters,
   latency,
   latencyHistory,
@@ -198,3 +198,5 @@ export default function MonitorDisplay({
     </section>
   );
 }
+
+export default memo(MonitorDisplay);

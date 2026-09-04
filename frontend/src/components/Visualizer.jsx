@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { memo, useEffect, useRef } from 'react';
 import { readThemeColors } from '../lib/theme';
 
 // Canvas cannot use var(), so the spectrum needs concrete colour strings.
@@ -15,9 +15,15 @@ const FALLBACK_COLORS = {
   idle: 'rgba(255, 255, 255, 0.07)',
 };
 
+// The idle animation is decoration; it does not need a full 60 fps.
+const IDLE_FRAME_INTERVAL_MS = 1000 / 24;
+
 // Real-time canvas visualizer: flat single-color output spectrum with the
 // input spectrum as a dim layer behind it, plus a quiet idle animation.
-export default function Visualizer({ getAnalysers, isRunning, theme }) {
+//
+// `active` is false while the studio tab is hidden — the panel stays mounted
+// (so its state survives) but nothing should be drawn for an invisible canvas.
+function Visualizer({ getAnalysers, isRunning, theme, active = true }) {
   const canvasRef = useRef(null);
   const animRef = useRef(null);
   const idlePhaseRef = useRef(0);
@@ -42,32 +48,47 @@ export default function Visualizer({ getAnalysers, isRunning, theme }) {
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas) return undefined;
+    if (!canvas || !active) return undefined;
     const ctx = canvas.getContext('2d');
 
-    const resize = () => {
+    // CSS-pixel size, refreshed by the observer. Reading the bounding rect
+    // inside the draw loop forced a layout on every frame.
+    let width = 0;
+    let height = 0;
+
+    const resize = (rect) => {
+      width = rect.width;
+      height = rect.height;
       const dpr = window.devicePixelRatio || 1;
-      const rect = canvas.getBoundingClientRect();
-      canvas.width = Math.max(1, Math.round(rect.width * dpr));
-      canvas.height = Math.max(1, Math.round(rect.height * dpr));
+      canvas.width = Math.max(1, Math.round(width * dpr));
+      canvas.height = Math.max(1, Math.round(height * dpr));
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     };
-    resize();
-    const observer = new ResizeObserver(resize);
+    resize(canvas.getBoundingClientRect());
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[entries.length - 1];
+      if (entry) resize(entry.contentRect);
+    });
     observer.observe(canvas);
 
     const inputData = new Uint8Array(1024);
     const outputData = new Uint8Array(1024);
+    let lastIdleFrame = 0;
 
-    const draw = () => {
-      const rect = canvas.getBoundingClientRect();
-      const width = rect.width;
-      const height = rect.height;
-      ctx.clearRect(0, 0, width, height);
+    const draw = (timestamp) => {
+      animRef.current = requestAnimationFrame(draw);
+      if (width <= 0 || height <= 0) return;
 
       const { input, output } = getAnalysers?.() || {};
       const colors = colorsRef.current;
       const running = isRunningRef.current && (input || output);
+
+      if (!running) {
+        if (timestamp - lastIdleFrame < IDLE_FRAME_INTERVAL_MS) return;
+        lastIdleFrame = timestamp;
+      }
+
+      ctx.clearRect(0, 0, width, height);
 
       const barCount = Math.max(24, Math.min(96, Math.floor(width / 12)));
       const gap = 2;
@@ -104,7 +125,7 @@ export default function Visualizer({ getAnalysers, isRunning, theme }) {
         }
       } else {
         // Idle: slow, dim noise floor.
-        idlePhaseRef.current += 0.012;
+        idlePhaseRef.current += 0.03;
         const phase = idlePhaseRef.current;
         for (let i = 0; i < barCount; i++) {
           const t = i / (barCount - 1);
@@ -118,16 +139,15 @@ export default function Visualizer({ getAnalysers, isRunning, theme }) {
           ctx.fillRect(x, height - h, barWidth, h);
         }
       }
-
-      animRef.current = requestAnimationFrame(draw);
     };
 
     animRef.current = requestAnimationFrame(draw);
     return () => {
       observer.disconnect();
       if (animRef.current) cancelAnimationFrame(animRef.current);
+      animRef.current = null;
     };
-  }, [getAnalysers]);
+  }, [getAnalysers, active]);
 
   return (
     <section className="panel relative overflow-hidden p-5">
@@ -147,7 +167,7 @@ export default function Visualizer({ getAnalysers, isRunning, theme }) {
           </span>
         </div>
       </div>
-      <canvas ref={canvasRef} className="mt-4 h-44 w-full sm:h-52" />
+      <canvas ref={canvasRef} className="mt-4 h-44 w-full sm:h-52" aria-hidden="true" />
       {!isRunning && (
         <p className="pointer-events-none absolute inset-x-0 bottom-[38%] text-center text-xs font-medium uppercase tracking-[0.2em] text-fg-faint">
           Start routing to see the live spectrum
@@ -156,3 +176,5 @@ export default function Visualizer({ getAnalysers, isRunning, theme }) {
     </section>
   );
 }
+
+export default memo(Visualizer);

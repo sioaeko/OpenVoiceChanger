@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { memo, useCallback, useEffect, useState } from 'react';
 import { LoaderCircle, Plus, Trash2, X } from 'lucide-react';
 import { fetchPresets, savePreset, deletePreset } from '../lib/api';
 
@@ -8,11 +8,9 @@ function PresetChip({ preset, active, onApply, onDelete }) {
       <button
         onClick={() => onApply(preset)}
         title={preset.description}
-        className={`rounded border px-3 py-2 text-sm font-medium transition ${
-          active
-            ? 'border-ok-line-strong bg-ok-bg-strong text-ok-fg'
-            : 'border-line bg-input text-fg-muted hover:border-line-hover hover:text-fg-secondary'
-        }`}
+        aria-pressed={active}
+        data-selected={active}
+        className={`frost-control min-h-9 px-3 py-2 text-sm font-medium ${active ? 'text-fg' : 'text-fg-muted hover:text-fg-secondary'}`}
       >
         <span className="flex items-center gap-1.5 whitespace-nowrap">
           {preset.emoji && (
@@ -24,6 +22,8 @@ function PresetChip({ preset, active, onApply, onDelete }) {
         </span>
       </button>
       {onDelete && (
+        /* reveal-on-hover: tucked away until hover/focus on a mouse-driven
+           device, always visible where there is no hover to reveal it. */
         <button
           onClick={(event) => {
             event.stopPropagation();
@@ -31,7 +31,7 @@ function PresetChip({ preset, active, onApply, onDelete }) {
           }}
           title="Delete preset"
           aria-label={`Delete ${preset.name} preset`}
-          className="absolute -right-2 -top-2 inline-flex h-6 w-6 items-center justify-center rounded border border-danger-line-strong bg-panel text-danger-fg opacity-0 shadow-sm transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus:opacity-100"
+          className="reveal-on-hover absolute -right-2 -top-2 inline-flex h-6 w-6 items-center justify-center rounded-md border border-danger-line-strong bg-panel text-danger-fg shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--frost-focus)]"
         >
           <Trash2 className="h-3 w-3" aria-hidden="true" />
         </button>
@@ -40,7 +40,7 @@ function PresetChip({ preset, active, onApply, onDelete }) {
   );
 }
 
-export default function PresetBar({ activePresetId, onApplyPreset, getCurrentSettings }) {
+function PresetBar({ activePresetId, onApplyPreset, getCurrentSettings }) {
   const [presets, setPresets] = useState({ builtin: [], user: [] });
   const [saving, setSaving] = useState(false);
   const [saveName, setSaveName] = useState('');
@@ -109,9 +109,10 @@ export default function PresetBar({ activePresetId, onApplyPreset, getCurrentSet
                   if (event.key === 'Escape') setShowSave(false);
                 }}
                 placeholder="Preset name"
+                aria-label="Preset name"
                 maxLength={40}
                 autoFocus
-                className="w-40 rounded border border-line-hover bg-input px-3 py-1.5 text-sm text-fg placeholder:text-fg-faint focus:border-line-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--frost-focus)]"
+                className="w-40 min-w-0 rounded-lg border border-line-strong bg-input px-3 py-2 text-sm text-fg placeholder:text-fg-faint focus:border-line-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--frost-focus)]"
               />
               <button onClick={handleSave} disabled={saving || !saveName.trim()} className="chip-button inline-flex items-center gap-1.5">
                 {saving ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : null}
@@ -135,7 +136,7 @@ export default function PresetBar({ activePresetId, onApplyPreset, getCurrentSet
         </div>
       </div>
 
-      {error && <p className="mt-2 text-xs text-danger-fg">{error}</p>}
+      {error && <p className="mt-2 text-xs text-danger-fg" role="alert">{error}</p>}
 
       <div className="mt-4 flex gap-2 overflow-x-auto pb-2 pt-2">
         {presets.builtin.map((preset) => (
@@ -160,3 +161,5 @@ export default function PresetBar({ activePresetId, onApplyPreset, getCurrentSet
     </section>
   );
 }
+
+export default memo(PresetBar);

@@ -1,4 +1,6 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
+import UpdatePanel from './UpdatePanel';
+import Toggle from './Toggle';
 import {
   Activity,
   AudioLines,
@@ -64,7 +66,7 @@ function ThemePicker({ theme, onThemeChange }) {
       role="radiogroup"
       aria-label="Colour theme"
       onKeyDown={handleKeyDown}
-      className="mt-4 flex items-center gap-0.5 rounded-md border border-[color:var(--frost-border)] bg-sunken p-0.5"
+      className="mt-3 flex items-center gap-1 rounded-lg border border-[color:var(--frost-border)] bg-sunken p-1"
     >
       {THEME_OPTIONS.map(({ value, label, Icon }) => {
         const selected = theme === value;
@@ -78,10 +80,10 @@ function ThemePicker({ theme, onThemeChange }) {
             data-theme-option={value}
             onClick={() => onThemeChange?.(value)}
             data-selected={selected}
-            className={`flex flex-1 items-center justify-center gap-2 rounded border px-4 py-2 text-xs font-semibold uppercase tracking-[0.12em] ${
+            className={`flex h-9 flex-1 items-center justify-center gap-2 rounded-md border px-4 text-xs font-medium ${
               selected
                 ? 'frost-control text-fg'
-                : 'border-transparent text-fg-subtle transition-colors duration-150 ease-out hover:text-fg-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--frost-focus)]'
+                : 'border-transparent text-fg-muted transition-colors duration-150 ease-out hover:text-fg focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--frost-focus)]'
             }`}
           >
             <Icon className="h-4 w-4" aria-hidden="true" />
@@ -93,43 +95,18 @@ function ThemePicker({ theme, onThemeChange }) {
   );
 }
 
-function Toggle({ checked, onChange, label }) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-label={label}
-      onClick={() => onChange?.(!checked)}
-      className={`relative h-6 w-11 flex-shrink-0 rounded border transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--frost-focus)] ${
-        checked ? 'border-ok-line-strong bg-ok-bg-strong' : 'border-line-strong bg-input'
-      }`}
-    >
-      <span
-        className={`absolute top-1/2 h-4 w-4 -translate-y-1/2 rounded-[3px] transition-[left,background-color] duration-150 ${
-          checked ? 'left-[calc(100%-19px)] bg-ok-solid' : 'left-[3px] bg-fg-faint'
-        }`}
-      />
-    </button>
-  );
-}
-
 function uniqueSorted(values) {
   return [...new Set(values.filter((value) => Number.isFinite(value) && value > 0))].sort((a, b) => a - b);
 }
 
 function RuntimeBadge({ label, ready }) {
   return (
-    <div className={`rounded-md border px-4 py-3 ${
-      ready
-        ? 'border-ok-line bg-ok-bg text-ok-fg'
-        : 'border-line-strong bg-raised text-fg-subtle'
-    }`}
-    >
-      <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-fg-subtle">
+    <div className="flex min-w-0 items-center justify-between gap-3 py-3">
+      <p className="text-xs font-medium text-fg-muted">
         {label}
       </p>
-      <p className="mt-2 text-sm font-medium">
+      <p className={`flex items-center gap-2 text-xs font-medium ${ready ? 'text-ok-fg' : 'text-fg-subtle'}`}>
+        <span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full ${ready ? 'bg-ok-solid' : 'bg-fg-faint'}`} />
         {ready ? 'Ready' : 'Unavailable'}
       </p>
     </div>
@@ -138,15 +115,15 @@ function RuntimeBadge({ label, ready }) {
 
 function RuntimeItem({ label, value, detail }) {
   return (
-    <div className="rounded-md border border-line-strong bg-raised px-4 py-4">
-      <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-fg-subtle">
+    <div className="min-w-0 py-4">
+      <p className="text-xs font-medium text-fg-subtle">
         {label}
       </p>
-      <p className="mt-2 text-sm font-medium text-fg">
+      <p className="mt-1 break-words text-sm font-medium text-fg">
         {value}
       </p>
       {detail ? (
-        <p className="mt-2 text-xs leading-5 text-fg-subtle">
+        <p className="mt-1 break-words text-xs leading-5 text-fg-subtle">
           {detail}
         </p>
       ) : null}
@@ -165,7 +142,35 @@ export default function GlobalSettings({
   serverMs = 0,
   serverStats = {},
   streamSampleRate = null,
+  updates,
 }) {
+  const dialogRef = useRef(null);
+
+  useEffect(() => {
+    const opener = document.activeElement;
+    dialogRef.current?.querySelector('button')?.focus({ preventScroll: true });
+    return () => {
+      if (opener instanceof HTMLElement && opener.isConnected) {
+        opener.focus({ preventScroll: true });
+      }
+    };
+  }, []);
+
+  const handleDialogKeyDown = (event) => {
+    if (event.key !== 'Tab') return;
+    const controls = [...dialogRef.current.querySelectorAll('button, input, select, a[href], [tabindex]')]
+      .filter((element) => !element.disabled && element.tabIndex >= 0 && element.getClientRects().length > 0);
+    const first = controls[0];
+    const last = controls[controls.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last?.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first?.focus();
+    }
+  };
+
   const sampleRateOptions = useMemo(
     () => uniqueSorted([config.sampleRate, ...SAMPLE_RATE_OPTIONS]),
     [config.sampleRate]
@@ -199,48 +204,40 @@ export default function GlobalSettings({
   const inferenceDuty = Math.max(0, Math.min(100, Math.round(serverStats.inferenceDutyPercent || 0)));
 
   return (
-    <section className="rounded-lg border border-line-strong bg-overlay p-6 shadow-[0_32px_120px_var(--overlay-shadow)] backdrop-blur-2xl sm:p-7">
-      <div className="flex flex-col gap-4 border-b border-line-strong pb-5 sm:flex-row sm:items-start sm:justify-between">
+    <section ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="settings-title" onKeyDown={handleDialogKeyDown} className="rounded-lg border border-line-strong bg-overlay p-6 shadow-[0_16px_64px_var(--overlay-shadow)] sm:p-7">
+      <div className="flex items-center justify-between gap-4 border-b border-line pb-4">
         <div className="min-w-0">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.34em] text-fg-subtle">
-            Global Settings
-          </p>
-          <h2 className="mt-2 text-xl font-semibold tracking-normal text-fg">
-            Session runtime
+          <h2 id="settings-title" className="text-lg font-semibold text-fg">
+            Settings
           </h2>
-          <p className="mt-2 max-w-2xl text-sm text-fg-muted">
-            Keep stream defaults and hardware runtime details in one place.
-          </p>
         </div>
 
         {onClose ? (
           <button
             onClick={onClose}
-            /* frost-control owns the surface, border, radius, transition and
-               focus ring — see index.css. */
             className="frost-control inline-flex h-10 w-10 items-center justify-center text-fg-muted hover:text-fg-secondary"
             aria-label="Close settings"
+            title="Close settings"
           >
             <X className="h-4 w-4" aria-hidden="true" />
           </button>
         ) : null}
       </div>
 
-      <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1.02fr)_minmax(0,0.98fr)]">
-        <div className="rounded-md border border-line-strong bg-raised p-5">
-          <div className="flex flex-col gap-2 border-b border-line-strong pb-4">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-fg-subtle">
+      <UpdatePanel updates={updates} />
+
+      <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
+        <div className="min-w-0">
+          <div>
+            <p className="text-sm font-semibold text-fg-secondary">
               Stream Defaults
-            </p>
-            <p className="text-sm text-fg-muted">
-              Manual transport fields lock while live; profiles can queue for the next session.
             </p>
           </div>
 
           <div className="mt-5">
             <div className="flex items-end justify-between gap-3">
               <div>
-                <p className="text-xs font-medium uppercase tracking-[0.2em] text-fg-subtle">
+                <p className="text-xs font-medium text-fg-muted">
                   Performance profile
                 </p>
                 <p className="mt-1 font-mono text-[11px] tabular-nums text-fg-faint">
@@ -254,7 +251,7 @@ export default function GlobalSettings({
               ) : null}
             </div>
 
-            <div className="mt-3 grid grid-cols-3 gap-0.5 rounded-md border border-[color:var(--frost-border)] bg-sunken p-0.5">
+            <div role="group" aria-label="Performance profile" className="mt-3 grid grid-cols-3 gap-1 rounded-lg border border-[color:var(--frost-border)] bg-sunken p-1">
               {PERFORMANCE_PROFILES.map((profile) => {
                 const Icon = PROFILE_ICONS[profile.id];
                 const selected = activeProfile.id === profile.id;
@@ -265,14 +262,14 @@ export default function GlobalSettings({
                     aria-pressed={selected}
                     data-selected={selected}
                     onClick={() => onChange?.({ chunkSize: profile.chunkSize })}
-                    className={`flex min-h-[72px] min-w-0 flex-col items-center justify-center gap-1 rounded border px-1 py-2 text-center transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-45 ${
+                    className={`flex min-h-[72px] min-w-0 flex-col items-center justify-center gap-1 rounded-md border px-1 py-2 text-center transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-45 ${
                       selected
                         ? 'frost-control text-fg'
-                        : 'border-transparent text-fg-subtle hover:text-fg-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--frost-focus)]'
+                        : 'border-transparent text-fg-muted hover:text-fg focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--frost-focus)]'
                     }`}
                   >
                     <Icon className="h-4 w-4 flex-shrink-0" aria-hidden="true" />
-                    <span className="max-w-full text-[11px] font-semibold uppercase tracking-[0.08em]">
+                    <span className="max-w-full text-xs font-medium">
                       {profile.label}
                     </span>
                     <span className="font-mono text-[11px] tabular-nums text-fg-faint">
@@ -283,11 +280,11 @@ export default function GlobalSettings({
               })}
             </div>
 
-            <div className="mt-4 flex flex-col gap-3 border-l-2 border-line-strong pl-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
                   <Activity className="h-4 w-4 flex-shrink-0 text-fg-subtle" aria-hidden="true" />
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-fg-subtle">
+                  <p className="text-xs font-medium text-fg-muted">
                     Measured recommendation
                   </p>
                 </div>
@@ -319,14 +316,15 @@ export default function GlobalSettings({
 
           <div className="mt-5 grid gap-5 sm:grid-cols-2">
             <div>
-              <label className="block text-xs font-medium uppercase tracking-[0.2em] text-fg-subtle">
+              <label htmlFor="session-sample-rate" className="block text-xs font-medium text-fg-muted">
                 Sample Rate
               </label>
               <select
+                id="session-sample-rate"
                 value={config.sampleRate}
                 onChange={(event) => onChange?.({ sampleRate: Number(event.target.value) })}
                 disabled={disabled}
-                className="native-select-safe mt-3 w-full rounded-md border border-line-strong bg-raised px-4 py-3 text-sm text-fg transition focus:border-line-hover focus:bg-control focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--frost-focus)] disabled:cursor-not-allowed disabled:opacity-50"
+                className="native-select-safe mt-2 w-full rounded-lg border border-line-strong bg-input px-3 py-2.5 text-sm text-fg transition-colors focus:border-line-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--frost-focus)] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {sampleRateOptions.map((value) => (
                   <option key={value} value={value}>
@@ -337,14 +335,15 @@ export default function GlobalSettings({
             </div>
 
             <div>
-              <label className="block text-xs font-medium uppercase tracking-[0.2em] text-fg-subtle">
+              <label htmlFor="session-chunk-size" className="block text-xs font-medium text-fg-muted">
                 Chunk Size
               </label>
               <select
+                id="session-chunk-size"
                 value={config.chunkSize}
                 onChange={(event) => onChange?.({ chunkSize: Number(event.target.value) })}
                 disabled={disabled}
-                className="native-select-safe mt-3 w-full rounded-md border border-line-strong bg-raised px-4 py-3 text-sm text-fg transition focus:border-line-hover focus:bg-control focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--frost-focus)] disabled:cursor-not-allowed disabled:opacity-50"
+                className="native-select-safe mt-2 w-full rounded-lg border border-line-strong bg-input px-3 py-2.5 text-sm text-fg transition-colors focus:border-line-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--frost-focus)] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {chunkSizeOptions.map((value) => (
                   <option key={value} value={value}>
@@ -355,22 +354,15 @@ export default function GlobalSettings({
             </div>
           </div>
 
-          <p className="mt-5 text-xs uppercase tracking-[0.18em] text-fg-subtle">
-            {disabled
-              ? 'Routing is active. Profiles queue for the next session; manual transport fields are locked.'
-              : 'Saved locally and synced to the server before the next stream starts.'}
-          </p>
+          {disabled ? <p className="mt-3 text-xs text-warn-fg">Routing active. Profile saved for the next session.</p> : null}
 
           <div className="mt-6 border-t border-line-strong pt-5">
             <div className="flex items-center justify-between gap-4">
               <div className="flex min-w-0 items-center gap-3">
                 <AudioLines className="h-5 w-5 flex-shrink-0 text-fg-subtle" aria-hidden="true" />
                 <div className="min-w-0">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-fg-subtle">
+                  <p className="text-sm font-semibold text-fg-secondary">
                     Silence Saver
-                  </p>
-                  <p className="mt-1 text-sm font-medium text-fg-secondary">
-                    Model inference gate
                   </p>
                 </div>
               </div>
@@ -383,7 +375,7 @@ export default function GlobalSettings({
 
             <div className={`mt-4 transition-opacity duration-150 ${config.silenceSaver ? '' : 'opacity-45'}`}>
               <div className="flex items-center justify-between gap-3">
-                <label htmlFor="silence-threshold" className="text-xs font-medium uppercase tracking-[0.16em] text-fg-subtle">
+                <label htmlFor="silence-threshold" className="text-xs font-medium text-fg-muted">
                   Sleep threshold
                 </label>
                 <output htmlFor="silence-threshold" className="font-mono text-xs tabular-nums text-fg-secondary">
@@ -405,7 +397,7 @@ export default function GlobalSettings({
             </div>
 
             <div className="mt-3 flex items-center justify-between gap-3 border-t border-line pt-3">
-              <span className={`text-[11px] font-semibold uppercase tracking-[0.14em] ${
+              <span className={`text-xs font-medium ${
                 serverStats.inferenceSleeping ? 'text-ok-fg' : 'text-fg-faint'
               }`}
               >
@@ -424,31 +416,28 @@ export default function GlobalSettings({
           </div>
 
           <div className="mt-6 border-t border-line-strong pt-5">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-fg-subtle">
+            <p className="text-sm font-semibold text-fg-secondary">
               Appearance
             </p>
             <ThemePicker theme={theme} onThemeChange={onThemeChange} />
           </div>
         </div>
 
-        <div className="rounded-md border border-line-strong bg-raised p-5">
-          <div className="flex flex-col gap-4 border-b border-line-strong pb-4">
+        <div className="min-w-0 border-t border-line pt-6 lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0">
+          <div className="border-b border-line">
             <div>
-              <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-fg-subtle">
+              <p className="text-sm font-semibold text-fg-secondary">
                 Hardware Runtime
-              </p>
-              <p className="mt-2 text-sm text-fg-muted">
-                What the backend currently sees for ONNX, PyTorch, GPU, and CUDA.
               </p>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="mt-2 divide-y divide-line">
               <RuntimeBadge label="ONNX Runtime" ready={config.runtime?.onnx?.available} />
               <RuntimeBadge label="PyTorch / RVC" ready={config.runtime?.torch?.available} />
             </div>
           </div>
 
-          <div className="mt-5 grid gap-3 sm:grid-cols-2">
+          <div className="divide-y divide-line">
             <RuntimeItem
               label="ONNX Provider"
               value={onnxProvider}
