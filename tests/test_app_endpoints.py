@@ -194,6 +194,49 @@ class TestBypassOverTheWire:
         assert message["code"] == 1003
 
 
+class TestConvertResponse:
+    @staticmethod
+    def _wav(seconds=0.5, sample_rate=16000):
+        sf = pytest.importorskip("soundfile")
+        import io
+
+        t = np.arange(int(seconds * sample_rate)) / sample_rate
+        buf = io.BytesIO()
+        sf.write(buf, (0.3 * np.sin(2 * np.pi * 220.0 * t)).astype(np.float32), sample_rate, format="WAV")
+        return buf.getvalue()
+
+    def test_dsp_render_returns_inline_wav(self, client):
+        """The studio reads the result with fetch() and offers its own download.
+
+        `inline` matters: an `attachment` disposition makes download managers
+        with browser integration (IDM) seize the response and hand the page an
+        empty 204, which surfaced as a 0 B result in the converter.
+        """
+        sf = pytest.importorskip("soundfile")
+        import io
+
+        response = client.post(
+            "/api/convert/",
+            files={"file": ("tone.wav", self._wav(), "audio/wav")},
+            data={"pitch_shift": "-2", "formant_shift": "0", "effects": "{}", "use_model": "false"},
+        )
+
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "audio/wav"
+        assert response.headers["content-disposition"] == 'inline; filename="tone_converted.wav"'
+        rendered, sample_rate = sf.read(io.BytesIO(response.content), dtype="float32")
+        assert sample_rate == 16000
+        assert len(rendered) == 8000
+
+    def test_empty_upload_is_rejected(self, client):
+        response = client.post(
+            "/api/convert/",
+            files={"file": ("empty.wav", b"", "audio/wav")},
+            data={"effects": "{}", "use_model": "false"},
+        )
+        assert response.status_code == 400
+
+
 class TestConvertDefaults:
     def test_offline_converter_shares_the_live_f0_default(self):
         """Live and offline paths must not disagree on the default method."""

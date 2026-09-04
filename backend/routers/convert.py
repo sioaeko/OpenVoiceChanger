@@ -174,8 +174,14 @@ async def convert_file(
         raise HTTPException(status_code=500, detail=f"Conversion failed: {exc}")
 
     out_name = f"{Path(file.filename).stem}_converted.wav"
+    # `inline`, not `attachment`: the studio reads this response with fetch()
+    # and offers the download itself from a blob URL, so a download prompt is
+    # never wanted here. An `attachment` disposition also invites download
+    # managers (IDM's browser integration, for one) to hijack the response and
+    # hand the page an empty 204 instead of the audio. The filename stays as a
+    # hint for direct API clients.
     return Response(
         content=wav_bytes,
         media_type="audio/wav",
-        headers={"Content-Disposition": f'attachment; filename="{out_name}"'},
+        headers={"Content-Disposition": f'inline; filename="{out_name}"'},
     )
