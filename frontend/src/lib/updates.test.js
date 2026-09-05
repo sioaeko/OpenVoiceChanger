@@ -77,7 +77,8 @@ describe('restart safety', () => {
     expect(localUpdateBlock({ isStarting: true })).toMatch('microphone setup');
     expect(localUpdateBlock({ isRecording: true })).toMatch('Stop recording');
     expect(localUpdateBlock({ isRunning: true })).toMatch('Stop audio');
-    expect(localUpdateBlock({ lastRecording: {} })).toMatch('Download and clear');
+    expect(localUpdateBlock({ lastRecording: {} })).toMatch('download unsaved takes');
+    expect(localUpdateBlock({ lastRecording: false })).toBeNull();
     expect(localUpdateBlock({ converterBlock: 'Download the converted audio.' })).toMatch('converted audio');
     expect(localUpdateBlock({})).toBeNull();
   });

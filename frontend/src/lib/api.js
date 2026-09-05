@@ -76,6 +76,16 @@ export async function fetchModels() {
   return request('/models/');
 }
 
+export const fetchRuntimeSetup = (options = {}) => request('/runtime-setup', options);
+export const installRuntime = (options = {}) => request('/runtime-setup/install', {
+  ...options, method: 'POST', headers: { 'X-OpenVoiceChanger-Action': 'runtime-setup' },
+  body: JSON.stringify({ profile: 'windows-cpu-v1' }),
+});
+export const cancelRuntimeSetup = (jobId, options = {}) => request('/runtime-setup/cancel', {
+  ...options, method: 'POST', headers: { 'X-OpenVoiceChanger-Action': 'runtime-setup' },
+  body: JSON.stringify({ job_id: jobId }),
+});
+
 /**
  * Upload a model checkpoint, reporting real transport progress.
  *

@@ -37,7 +37,7 @@ export function localUpdateBlock({ isStarting, isRunning, isRecording, lastRecor
   if (isRecording) return 'Stop recording before restarting the studio.';
   if (isStarting) return 'Finish or cancel microphone setup before restarting the studio.';
   if (isRunning) return 'Stop audio routing before restarting the studio.';
-  if (lastRecording) return 'Download and clear the last recording before restarting the studio.';
+  if (lastRecording) return 'Wait for takes to save, or download unsaved takes before restarting the studio.';
   return converterBlock || null;
 }
 

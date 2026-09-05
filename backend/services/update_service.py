@@ -10,6 +10,7 @@ from backend.config import settings
 from backend.services.update_activity import UpdateActivity
 from backend.services.update_installer import BUSY_PHASES, UpdateInstaller, atomic_json, read_json
 from backend.services.update_release import UpdateError, latest_release
+from backend.services.setup_manifest import SETUP_BUSY
 from backend.version import ROOT, VERSION, version_tuple
 
 CHECK_INTERVAL = 3600
@@ -39,8 +40,12 @@ class UpdateService:
 
     def managed(self) -> bool:
         runtime = read_json(self.installer.state_dir / "runtime.json")
+        # Windows venv python.exe is a redirector; the actual interpreter is its child.
+        process_ids = {os.getpid()}
+        if os.name == "nt":
+            process_ids.add(os.getppid())
         return bool(self.instance and runtime.get("instance") == self.instance
-                    and runtime.get("pid") == os.getpid())
+                    and runtime.get("pid") in process_ids)
 
     def operation(self) -> dict:
         value = read_json(self.installer.state_dir / "state.json")
@@ -49,7 +54,10 @@ class UpdateService:
         return value
 
     def sync_activity(self):
-        self.activity.set_maintenance(self.operation().get("phase") in BUSY_PHASES)
+        setup = read_json(self.root / "data" / "rvc-setup" / "state.json")
+        setup_busy = (self.managed() and setup.get("instance") == self.instance
+                      and setup.get("phase") in SETUP_BUSY)
+        self.activity.set_maintenance(self.operation().get("phase") in BUSY_PHASES or setup_busy)
 
     async def start(self):
         self.sync_activity()
@@ -88,7 +96,7 @@ class UpdateService:
     async def snapshot(self):
         operation = self.operation()
         busy = operation.get("phase") in BUSY_PHASES
-        self.activity.set_maintenance(busy)
+        self.sync_activity()
         available = bool(self.release and version_tuple(self.release.version) > version_tuple(VERSION))
         blocked = None
         if not self.managed():
@@ -106,7 +114,7 @@ class UpdateService:
         # A preflight may have overlapped the launcher's next phase.
         operation = self.operation()
         busy = operation.get("phase") in BUSY_PHASES
-        self.activity.set_maintenance(busy)
+        self.sync_activity()
         return {
             "current_version": VERSION,
             "status": status,

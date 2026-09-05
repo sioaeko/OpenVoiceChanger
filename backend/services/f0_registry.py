@@ -96,7 +96,7 @@ def f0_capabilities() -> list[dict]:
         elif method.dependency and not _module_available(method.dependency):
             reason = f"Missing {method.dependency}"
         elif method.asset_setting and not _asset_path(method.asset_setting).is_file():
-            reason = f"Missing {_asset_path(method.asset_setting).as_posix()}"
+            reason = f"Missing asset configured by OVC_{method.asset_setting}"
         availability[method.id] = (reason is None, reason)
 
     for method in F0_METHODS:
@@ -119,3 +119,29 @@ def f0_capabilities() -> list[dict]:
 
 def capability_map() -> dict[str, dict]:
     return {item["id"]: item for item in f0_capabilities()}
+
+
+def runtime_readiness() -> dict:
+    """Inspect prerequisites without importing heavy models or disclosing paths."""
+    importlib.invalidate_caches()
+    checks = [
+        {"id": module, "label": label, "available": _module_available(module),
+         "required": True, "kind": "package"}
+        for module, label in (("torch", "PyTorch"), *BASE_RUNTIME_MODULES)
+    ]
+    for key, label, required in (
+        ("HUBERT_PATH", "HuBERT content encoder", True),
+        ("RMVPE_ROOT", "RMVPE weights", False),
+        ("RMVPE_ONNX_PATH", "RMVPE ONNX weights", False),
+        ("CREPE_ONNX_FULL_PATH", "Crepe ONNX Full weights", False),
+        ("CREPE_ONNX_TINY_PATH", "Crepe ONNX Tiny weights", False),
+    ):
+        checks.append({"id": key, "label": label, "available": _asset_path(key).is_file(),
+                       "required": required, "kind": "asset", "setting": f"OVC_{key}"})
+    checks.extend(
+        {"id": module, "label": label, "available": _module_available(module),
+         "required": False, "kind": "package"}
+        for module, label in (("torchfcpe", "FCPE"), ("onnxruntime", "ONNX Runtime"))
+    )
+    return {"prerequisitesDetected": all(item["available"] for item in checks if item["required"]),
+            "checks": checks}

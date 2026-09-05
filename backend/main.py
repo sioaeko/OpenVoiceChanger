@@ -1,4 +1,5 @@
 import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -7,13 +8,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from backend.config import settings
-from backend.routers import convert, github_star, models, presets, updates, websocket
+from backend.routers import convert, github_star, models, presets, runtime_setup, updates, websocket
 from backend.security import cors_origins
 from backend.services.model_manager import ModelManager
 from backend.services.preset_store import PresetStore
-from backend.services.f0_registry import f0_capabilities
+from backend.services.f0_registry import f0_capabilities, runtime_readiness
 from backend.services.update_activity import UpdateGuardMiddleware
 from backend.services.update_service import UpdateService
+from backend.services.runtime_setup_service import RuntimeSetupService
 from backend.version import VERSION
 
 _onnx_available = False
@@ -122,6 +124,7 @@ async def lifespan(app: FastAPI):
     app.state.model_manager = manager
     app.state.preset_store = PresetStore(settings.PRESETS_PATH)
     app.state.updates = UpdateService(enabled=settings.UPDATE_CHECK_ENABLED)
+    app.state.runtime_setup = RuntimeSetupService(app.state.updates)
     await app.state.updates.start()
 
     if settings.ALLOW_ANY_ORIGIN:
@@ -182,6 +185,7 @@ async def get_config():
     return {
         "version": app.version,
         "update_instance": app.state.updates.instance,
+        "runtime_setup_job": os.environ.get("OVC_RVC_SETUP_JOB"),
         "sample_rate": settings.SAMPLE_RATE,
         "chunk_size": settings.CHUNK_SIZE,
         "silence_saver": websocket.DEFAULT_SILENCE_SAVER,
@@ -191,6 +195,7 @@ async def get_config():
         "runtime": {
             "onnx": _get_onnx_runtime_info(),
             "torch": _get_torch_runtime_info(),
+            "rvc": runtime_readiness(),
         },
         "f0_methods": f0_capabilities(),
     }
@@ -202,6 +207,7 @@ app.include_router(presets.router)
 app.include_router(convert.router)
 app.include_router(github_star.router)
 app.include_router(updates.router)
+app.include_router(runtime_setup.router)
 app.include_router(websocket.router)
 
 # Mount frontend static files if the dist directory exists

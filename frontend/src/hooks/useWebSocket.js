@@ -11,6 +11,7 @@ const MAX_LATENCY_SAMPLES = 60;
 const UI_FLUSH_INTERVAL_MS = 250;
 const RECONNECT_INITIAL_MS = 1000;
 const RECONNECT_MAX_MS = 30000;
+const EMPTY_TRANSPORT = { pending: 0, inFlight: 0, dropped: 0, timedOut: 0 };
 
 const DEFAULT_SERVER_STATS = {
   modelMs: 0,
@@ -23,6 +24,7 @@ const DEFAULT_SERVER_STATS = {
   silenceThresholdDb: -52,
   inferenceSleeping: false,
   inferenceDutyPercent: 0,
+  processingError: null,
 };
 
 function transmitFrame(ws, buffer, seqNum) {
@@ -42,6 +44,7 @@ export default function useWebSocket() {
   const [serverMs, setServerMs] = useState(0);
   // Server-reported processing breakdown (from periodic status messages).
   const [serverStats, setServerStats] = useState(DEFAULT_SERVER_STATS);
+  const [transport, setTransport] = useState(EMPTY_TRANSPORT);
 
   const wsRef = useRef(null);
   const connectRef = useRef(null);
@@ -69,6 +72,9 @@ export default function useWebSocket() {
     setLatency(latestLatencyRef.current);
     setServerMs(latestServerMsRef.current);
     setLatencyHistory(historyRef.current.slice());
+    const queue = schedulerRef.current;
+    setTransport({ pending: queue.pendingCount, inFlight: queue.inFlightCount,
+      dropped: queue.droppedCount, timedOut: queue.timedOutCount });
   }, []);
 
   /** Clear the round-trip readout, e.g. when the audio stream stops. */
@@ -80,6 +86,8 @@ export default function useWebSocket() {
     setLatency(0);
     setServerMs(0);
     setLatencyHistory([]);
+    schedulerRef.current.reset();
+    setTransport(EMPTY_TRANSPORT);
   }, []);
 
   const clearReconnectTimer = useCallback(() => {
@@ -117,6 +125,8 @@ export default function useWebSocket() {
         reconnectDelayRef.current = RECONNECT_INITIAL_MS;
         clearReconnectTimer();
         schedulerRef.current.reset();
+        setTransport(EMPTY_TRANSPORT);
+        setServerStats(DEFAULT_SERVER_STATS);
 
         // Re-announce the live stream's real rate after a reconnect, so the
         // server never resumes processing with a stale assumption.
@@ -153,7 +163,7 @@ export default function useWebSocket() {
           for (const next of send) transmitFrame(ws, next.buffer, next.seqNum);
 
           const pcmData = new Float32Array(event.data, 8);
-          onAudioReceivedRef.current?.(pcmData, seqNum);
+          if (rttMs !== null) onAudioReceivedRef.current?.(pcmData, seqNum);
           return;
         }
 
@@ -164,6 +174,7 @@ export default function useWebSocket() {
               modelMs: msg.model_ms ?? 0,
               dspMs: msg.dsp_ms ?? 0,
               mode: msg.mode ?? 'dsp',
+              processingError: msg.processing_error ?? null,
               activeModel: msg.active_model ?? null,
               effectsActive: msg.effects_active ?? 0,
               // Older backends omit this; absence means "not bypassed".
@@ -188,6 +199,8 @@ export default function useWebSocket() {
         if (wsRef.current === ws) wsRef.current = null;
         schedulerRef.current.reset();
         setStatus('disconnected');
+        setTransport(EMPTY_TRANSPORT);
+        setServerStats(DEFAULT_SERVER_STATS);
         if (!intentionalCloseRef.current) scheduleReconnect();
       };
 
@@ -243,7 +256,8 @@ export default function useWebSocket() {
 
     const send = schedulerRef.current.offer({ buffer, seqNum }, performance.now());
     for (const next of send) transmitFrame(ws, next.buffer, next.seqNum);
-  }, []);
+    flushMeasurements(performance.now());
+  }, [flushMeasurements]);
 
   const sendSettings = useCallback((settings) => {
     const ws = wsRef.current;
@@ -288,10 +302,11 @@ export default function useWebSocket() {
     latencyHistory,
     serverMs,
     serverStats,
+    transport,
     resetLatency,
   }), [
     status, connect, disconnect, retryNow, sendAudio, sendSettings, setStreamSampleRate,
     setOnAudioReceived, setOnSettingsResponse, setOnOpen, latency, latencyHistory,
-    serverMs, serverStats, resetLatency,
+    serverMs, serverStats, transport, resetLatency,
   ]);
 }

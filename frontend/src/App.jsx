@@ -14,10 +14,12 @@ import Recorder from './components/Recorder';
 import FileConverter from './components/FileConverter';
 import GitHubStarButton from './components/GitHubStarButton';
 import UpdateButton from './components/UpdateButton';
+import RuntimeReadiness from './components/RuntimeReadiness';
 import useWebSocket from './hooks/useWebSocket';
 import useAudioPipeline from './hooks/useAudioPipeline';
 import useAudioDevices from './hooks/useAudioDevices';
 import useUpdates from './hooks/useUpdates';
+import useRuntimeSetup from './hooks/useRuntimeSetup';
 import { localUpdateBlock } from './lib/updates';
 import { getActiveModel, fetchConfig } from './lib/api';
 import { applyConfig, DEFAULT_F0_METHOD } from './lib/constants';
@@ -133,6 +135,7 @@ function mergeRuntimeConfig(config, stored = null) {
     ),
     f0Methods: normalizeF0Capabilities(config?.f0_methods),
     runtime: {
+      rvc: config?.runtime?.rvc ?? null,
       onnx: {
         ...DEFAULT_RUNTIME_INFO.onnx,
         available: Boolean(config?.runtime?.onnx?.available ?? config?.onnx_available),
@@ -191,18 +194,25 @@ export default function App() {
   const devices = useAudioDevices();
   const [converterBlock, setConverterBlock] = useState(null);
   const [audioStarting, setAudioStarting] = useState(false);
-  const updates = useUpdates(localUpdateBlock({
+  const maintenanceBlock = localUpdateBlock({
     isStarting: audioStarting,
     isRunning: pipeline.isRunning,
     isRecording: pipeline.isRecording,
-    lastRecording: pipeline.lastRecording,
+    lastRecording: pipeline.library.unsaved,
     converterBlock,
-  }));
+  });
+  const runtimeSetup = useRuntimeSetup(maintenanceBlock);
+  const updates = useUpdates(maintenanceBlock || (runtimeSetup.busy ? 'Wait for runtime setup to finish.' : null));
 
   // Deep links: ?tab=models|converter selects a tab, ?settings opens the modal.
   const [tab, setTab] = useState(() => readTabFromSearch(window.location.search));
   const [activeModel, setActiveModel] = useState(null);
   const [runtimeConfig, setRuntimeConfig] = useState(DEFAULT_RUNTIME_CONFIG);
+  const [runtimeRefresh, setRuntimeRefresh] = useState(0);
+  const [runtimeChecking, setRuntimeChecking] = useState(false);
+  const [runtimeError, setRuntimeError] = useState(null);
+  const [capabilitiesRevision, setCapabilitiesRevision] = useState(0);
+  const refreshRuntime = useCallback(() => setRuntimeRefresh((value) => value + 1), []);
   const [isSettingsOpen, setIsSettingsOpen] = useState(
     () => new URLSearchParams(window.location.search).has('settings')
   );
@@ -231,7 +241,11 @@ export default function App() {
     resetLatency,
   } = wsHook;
 
-  const updateBusy = updates.busy || updates.needsReload;
+  const updateBusy = updates.busy || updates.needsReload || runtimeSetup.busy;
+  const setupControls = { ...runtimeSetup, blocked: maintenanceBlock
+    || (updates.busy || updates.needsReload ? 'Finish the app update before installing the runtime.' : null) };
+
+  useEffect(() => { refreshRuntime(); }, [runtimeSetup.state?.active_job, refreshRuntime]);
 
   // --- Settings payload sync -------------------------------------------------
 
@@ -290,9 +304,30 @@ export default function App() {
   // --- Bootstrap -------------------------------------------------------------
 
   useEffect(() => {
+    if (wsStatus !== 'connected' && runtimeRefresh === 0) return undefined;
+    let cancelled = false;
+    setRuntimeChecking(true);
+    fetchConfig().then((config) => {
+      if (cancelled) return;
+      const next = mergeRuntimeConfig(config);
+      // Refresh capabilities only: never change live transport geometry.
+      setRuntimeConfig((current) => ({ ...current, runtime: next.runtime, f0Methods: next.f0Methods }));
+      setCapabilitiesRevision((value) => value + 1);
+      setRuntimeError(null);
+    }).catch(() => {
+      if (!cancelled) setRuntimeError('Runtime check failed. Reconnect to the server and retry.');
+    }).finally(() => {
+      if (!cancelled) setRuntimeChecking(false);
+    });
+    return () => { cancelled = true; };
+  }, [wsStatus, runtimeRefresh]);
+
+  useEffect(() => {
+    let cancelled = false;
     const storedConfig = readStored(GLOBAL_SETTINGS_STORAGE_KEY);
 
     const adopt = (cfg) => {
+      if (cancelled) return;
       const nextRuntimeConfig = mergeRuntimeConfig(cfg, storedConfig);
       applyConfig({
         sample_rate: nextRuntimeConfig.sampleRate,
@@ -304,8 +339,9 @@ export default function App() {
     fetchConfig()
       .then(adopt)
       .catch(() => adopt({}))
-      .finally(() => connect());
+      .finally(() => { if (!cancelled) connect(); });
     return () => {
+      cancelled = true;
       disconnect();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -577,6 +613,9 @@ export default function App() {
 
           <div className="space-y-5">
             <MonitorDisplay
+              streamInfo={pipeline.streamInfo}
+              playbackStats={pipeline.playbackStats}
+              transport={wsHook.transport}
               meters={pipeline.meters}
               latency={latency}
               latencyHistory={latencyHistory}
@@ -595,6 +634,7 @@ export default function App() {
         </div>
 
         <PresetBar
+          refreshRevision={capabilitiesRevision}
           activePresetId={activePresetId}
           onApplyPreset={applyPreset}
           getCurrentSettings={getCurrentSettings}
@@ -613,6 +653,8 @@ export default function App() {
           onActiveModelChange={setActiveModel}
           active={tab === 'models'}
         />
+        <RuntimeReadiness readiness={runtimeConfig.runtime?.rvc} checking={runtimeChecking}
+          error={runtimeError} onRefresh={refreshRuntime} setup={setupControls} />
       </div>
 
       <div {...panelProps('converter')} className="mx-auto max-w-3xl animate-fade-in-up">
@@ -635,6 +677,10 @@ export default function App() {
           />
           <div className="relative max-h-[calc(100svh-2.5rem)] w-full max-w-5xl overflow-y-auto">
             <GlobalSettings
+              runtimeSetup={setupControls}
+              runtimeChecking={runtimeChecking}
+              runtimeError={runtimeError}
+              onRefreshRuntime={refreshRuntime}
               config={runtimeConfig}
               onChange={handleGlobalSettingsChange}
               disabled={pipeline.isRunning}

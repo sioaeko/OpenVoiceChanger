@@ -25,6 +25,7 @@ export function createFrameScheduler({
   const inFlight = new Map(); // seqNum -> sentAt
   let pending = [];
   let dropped = 0;
+  let timedOut = 0;
 
   function expireStale(now) {
     let expired = 0;
@@ -54,7 +55,7 @@ export function createFrameScheduler({
      * while a reply is still outstanding.
      */
     offer(frame, now) {
-      expireStale(now);
+      timedOut += expireStale(now);
       pending.push(frame);
       while (pending.length > maxPending) {
         pending.shift();
@@ -83,6 +84,7 @@ export function createFrameScheduler({
       inFlight.clear();
       pending = [];
       dropped = 0;
+      timedOut = 0;
     },
 
     get inFlightCount() {
@@ -94,6 +96,9 @@ export function createFrameScheduler({
     /** Frames discarded because the pending list overflowed. */
     get droppedCount() {
       return dropped;
+    },
+    get timedOutCount() {
+      return timedOut;
     },
   };
 }

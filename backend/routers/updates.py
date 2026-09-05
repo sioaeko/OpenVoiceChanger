@@ -20,7 +20,7 @@ def _loopback(host: str | None) -> bool:
         return False
 
 
-def _guard(request: Request):
+def _guard(request: Request, action="update"):
     try:
         host = request.headers.get("host", "")
         parsed_host = urlsplit(f"http://{host}")
@@ -35,12 +35,12 @@ def _guard(request: Request):
             and _loopback(parsed_origin.hostname) and not parsed_origin.username
             and not parsed_origin.path and not parsed_origin.query and not parsed_origin.fragment
             and is_origin_allowed(origin, host, settings.CORS_ORIGINS, allow_any=False)
-            and request.headers.get("x-openvoicechanger-action") == "update"
+            and request.headers.get("x-openvoicechanger-action") == action
         )
     except ValueError:
         allowed = False
     if not allowed:
-        raise HTTPException(403, "Updates must be requested from the local studio on this computer.")
+        raise HTTPException(403, "Installation must be requested from the local studio on this computer.")
 
 
 class InstallRequest(BaseModel):

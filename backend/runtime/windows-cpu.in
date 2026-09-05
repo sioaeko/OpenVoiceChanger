@@ -1,0 +1,30 @@
+# Inference-only runtime. RVC and fairseq source revisions are pinned in setup_manifest.py.
+# Regenerate windows-cpu.lock with uv pip compile --python-version 3.10 --python-platform windows --torch-backend cpu --generate-hashes.
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+python-multipart>=0.0.18
+websockets>=14.0
+pydantic-settings>=2.6.0
+numpy==1.26.4
+scipy==1.14.1
+onnxruntime==1.23.2
+torch==2.11.0
+torchaudio==2.11.0
+faiss-cpu==1.13.2
+librosa==0.10.2.post1
+numba==0.58.1
+praat-parselmouth==0.4.7
+pyworld==0.3.5
+soundfile==0.12.1
+torchcrepe==0.0.22
+torchfcpe==0.0.4
+hydra-core==1.3.2
+omegaconf==2.3.0
+regex
+sacrebleu
+tqdm
+bitarray
+scikit-learn
+packaging
+einops
+setuptools<81

@@ -1,4 +1,5 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import useRecordingLibrary from './useRecordingLibrary';
 import { SAMPLE_RATE, CHUNK_SIZE } from '../lib/constants';
 import { encodeWav } from '../lib/wav';
 import { formatFileTimestamp } from '../lib/format';
@@ -28,9 +29,11 @@ export default function useAudioPipeline(wsHook) {
 
   const [isRunning, setIsRunning] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
-  const [lastRecording, setLastRecording] = useState(null); // {url, seconds, size, fileName}
+  const library = useRecordingLibrary();
+  const { addTake } = library;
   const [recordNotice, setRecordNotice] = useState(null); // {tone, message}
   const [streamInfo, setStreamInfo] = useState(null); // {sampleRate, requestedSampleRate, inputFallback}
+  const [playbackStats, setPlaybackStats] = useState(null);
 
   const audioContextRef = useRef(null);
   const captureSinkRef = useRef(null);
@@ -108,7 +111,7 @@ export default function useAudioPipeline(wsHook) {
       try {
         const blob = encodeWav(chunks, sampleRateRef.current);
         return {
-          url: URL.createObjectURL(blob),
+          blob,
           seconds: samples / sampleRateRef.current,
           size: blob.size,
           // Named once, when the take ends, so the download keeps one name.
@@ -126,13 +129,10 @@ export default function useAudioPipeline(wsHook) {
 
     if (!recording) return null;
 
-    setLastRecording((prev) => {
-      if (prev?.url) URL.revokeObjectURL(prev.url);
-      return recording;
-    });
+    addTake(recording);
     setRecordNotice(notice);
     return recording;
-  }, [meters]);
+  }, [meters, addTake]);
 
   const stop = useCallback(() => {
     if (recordingRef.current) {
@@ -190,6 +190,7 @@ export default function useAudioPipeline(wsHook) {
 
     meters.set({ input: 0, output: 0, recordSeconds: 0 });
     setStreamInfo(null);
+    setPlaybackStats(null);
     setIsRunning(false);
   }, [finalizeRecording, setOnAudioReceived, meters]);
 
@@ -228,7 +229,9 @@ export default function useAudioPipeline(wsHook) {
           try {
             await audioContext.setSinkId(outputDeviceId);
           } catch (sinkErr) {
-            console.warn('Could not route to the selected output device:', sinkErr);
+            const error = new Error('The selected output device could not be opened. Reconnect it or select another output before starting.', { cause: sinkErr });
+            error.name = 'OutputRoutingError';
+            throw error;
           }
         }
 
@@ -268,6 +271,9 @@ export default function useAudioPipeline(wsHook) {
           outputChannelCount: [1],
         });
         playbackNodeRef.current = playbackNode;
+        playbackNode.port.onmessage = ({ data }) => {
+          if (data?.type === 'diagnostics') setPlaybackStats(data);
+        };
 
         const captureSink = audioContext.createGain();
         captureSink.gain.value = 0;
@@ -296,7 +302,6 @@ export default function useAudioPipeline(wsHook) {
         // goes out, so the first chunk is interpreted correctly.
         setStreamSampleRate?.(actualSampleRate);
 
-        seqNumRef.current = 0;
         captureNode.port.onmessage = (event) => {
           const buffer = event.data;
           if (buffer instanceof Float32Array) {
@@ -323,7 +328,7 @@ export default function useAudioPipeline(wsHook) {
           if (full) {
             finalizeRecording({
               tone: 'warning',
-              message: `Recording stopped at the ${formatRecordLimit()} limit — the take was saved.`,
+              message: `Recording stopped at the ${formatRecordLimit()} limit. The WAV is ready to download.`,
             });
           }
         });
@@ -334,13 +339,16 @@ export default function useAudioPipeline(wsHook) {
         setStreamInfo({
           sampleRate: actualSampleRate,
           requestedSampleRate: SAMPLE_RATE,
+          chunkSize: CHUNK_SIZE,
+          baseLatency: audioContext.baseLatency ?? null,
+          outputLatency: audioContext.outputLatency ?? null,
           inputFallback,
         });
         setIsRunning(true);
       } catch (err) {
         console.error('Failed to start audio pipeline:', err);
         stop();
-        throw new Error(describeGetUserMediaError(err), { cause: err });
+        throw new Error(err.name === 'OutputRoutingError' ? err.message : describeGetUserMediaError(err), { cause: err });
       }
     },
     [
@@ -362,13 +370,12 @@ export default function useAudioPipeline(wsHook) {
 
   const stopRecording = useCallback(() => finalizeRecording(), [finalizeRecording]);
 
-  const discardRecording = useCallback(() => {
-    setLastRecording((prev) => {
-      if (prev?.url) URL.revokeObjectURL(prev.url);
-      return null;
-    });
-    setRecordNotice(null);
-  }, []);
+  useEffect(() => {
+    if (!isRecording) return undefined;
+    const guard = (event) => { event.preventDefault(); event.returnValue = ''; };
+    window.addEventListener('beforeunload', guard);
+    return () => window.removeEventListener('beforeunload', guard);
+  }, [isRecording]);
 
   // Stable accessor so canvas components can read the live analyser nodes.
   const getAnalysers = useCallback(() => ({
@@ -385,16 +392,16 @@ export default function useAudioPipeline(wsHook) {
     meters,
     getAnalysers,
     isRecording,
-    lastRecording,
+    library,
     recordNotice,
     startRecording,
     stopRecording,
-    discardRecording,
     maxRecordSeconds: MAX_RECORD_SECONDS,
     outputSelectionSupported,
     streamInfo,
+    playbackStats,
   }), [
-    start, stop, isRunning, meters, getAnalysers, isRecording, lastRecording, recordNotice,
-    startRecording, stopRecording, discardRecording, outputSelectionSupported, streamInfo,
+    start, stop, isRunning, meters, getAnalysers, isRecording, library, recordNotice,
+    startRecording, stopRecording, outputSelectionSupported, streamInfo, playbackStats,
   ]);
 }

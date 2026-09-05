@@ -7,8 +7,7 @@ export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(readFileSync(new URL('../VERSION', import.meta.url), 'utf8').trim()),
   },
-  // Tests cover the pure logic modules under src/lib, so the default Node
-  // environment is enough — no jsdom dependency needed.
+  // Pure logic uses Node; hook interaction tests opt into jsdom per file.
   test: {
     environment: 'node',
     include: ['src/**/*.test.js'],

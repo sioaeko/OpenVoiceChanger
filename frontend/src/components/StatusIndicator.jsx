@@ -9,13 +9,16 @@ const STATUS_CONFIG = {
 
 // Compact header status: connection dot, engine mode, active model.
 export default function StatusIndicator({ wsStatus, activeModel, mode, bypass = false }) {
-  const config = STATUS_CONFIG[wsStatus] || STATUS_CONFIG.disconnected;
+  const failed = mode === 'error' && !bypass;
+  const config = failed && wsStatus === 'connected'
+    ? { color: 'bg-danger-solid', label: 'Muted' }
+    : STATUS_CONFIG[wsStatus] || STATUS_CONFIG.disconnected;
   // Bypass replaces the engine label: while it is on, neither the model nor
   // the DSP chain is doing anything, so naming either one would be a lie.
   const bypassed = bypass || mode === 'bypass';
   const engineLabel = bypassed
     ? 'BYPASS'
-    : activeModel
+    : failed ? 'ERROR' : activeModel
       ? (mode === 'onnx' ? 'ONNX' : 'RVC')
       : 'DSP';
 
@@ -42,7 +45,7 @@ export default function StatusIndicator({ wsStatus, activeModel, mode, bypass = 
         title={
           bypassed
             ? 'Conversion bypassed — monitoring raw input (press B)'
-            : activeModel || 'No model loaded — pure DSP mode'
+            : failed ? 'Model inference failed; output muted' : activeModel || 'No model loaded — pure DSP mode'
         }
       >
         <span className={`text-[10px] font-bold uppercase tracking-[0.14em] ${

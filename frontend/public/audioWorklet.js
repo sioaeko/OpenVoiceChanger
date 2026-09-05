@@ -42,6 +42,9 @@ class PlaybackProcessor extends AudioWorkletProcessor {
     this.availableSamples = 0;
     this.isPrimed = false;
     this.lastSample = 0;
+    this.underruns = 0;
+    this.droppedSamples = 0;
+    this.reportSamples = 0;
 
     this.port.onmessage = (event) => {
       const data = event.data;
@@ -50,18 +53,17 @@ class PlaybackProcessor extends AudioWorkletProcessor {
           if (this.availableSamples >= this.ringBufferSize) {
             this.readIndex = (this.readIndex + 1) % this.ringBufferSize;
             this.availableSamples -= 1;
+            this.droppedSamples += 1;
           }
           this.ringBuffer[this.writeIndex] = data[i];
           this.writeIndex = (this.writeIndex + 1) % this.ringBufferSize;
+          this.availableSamples += 1;
         }
-        this.availableSamples = Math.min(
-          this.availableSamples + data.length,
-          this.ringBufferSize
-        );
 
         while (this.availableSamples > this.targetBufferSize) {
           this.readIndex = (this.readIndex + 1) % this.ringBufferSize;
           this.availableSamples -= 1;
+          this.droppedSamples += 1;
         }
 
         if (!this.isPrimed && this.availableSamples >= this.primeBufferSize) {
@@ -85,6 +87,7 @@ class PlaybackProcessor extends AudioWorkletProcessor {
       for (let i = 0; i < channelData.length; i++) {
         if (this.availableSamples <= 0) {
           this.isPrimed = false;
+          this.underruns += 1;
           let sample = this.lastSample;
           for (let j = i; j < channelData.length; j++) {
             sample *= 0.985;
@@ -109,6 +112,13 @@ class PlaybackProcessor extends AudioWorkletProcessor {
     // Copy mono to all output channels
     for (let ch = 1; ch < output.length; ch++) {
       output[ch].set(channelData);
+    }
+
+    this.reportSamples += channelData.length;
+    if (this.reportSamples >= sampleRate / 2) {
+      this.reportSamples = 0;
+      this.port.postMessage({ type: 'diagnostics', bufferedSamples: this.availableSamples,
+        underruns: this.underruns, droppedSamples: this.droppedSamples });
     }
 
     return true;

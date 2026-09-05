@@ -58,7 +58,7 @@ class UpdateGuardMiddleware:
         guarded = (scope["type"] == "http" and service
                    and scope.get("method") in {"POST", "PUT", "PATCH", "DELETE"}
                    and scope.get("path", "").startswith("/api/")
-                   and not scope.get("path", "").startswith("/api/updates"))
+                   and not scope.get("path", "").startswith(("/api/updates", "/api/runtime-setup")))
         if not guarded:
             return await self.app(scope, receive, send)
         try:

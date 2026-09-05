@@ -4,6 +4,17 @@ import { createFrameScheduler } from './frameQueue';
 const frame = (seqNum) => ({ buffer: new Float32Array(4), seqNum });
 
 describe('createFrameScheduler', () => {
+  it('counts timeouts separately from dropped queued frames and resets both', () => {
+    const scheduler = createFrameScheduler({ staleMs: 100 });
+    for (let i = 0; i < 5; i++) scheduler.offer(frame(i), i);
+    expect(scheduler.droppedCount).toBe(2);
+    scheduler.offer(frame(5), 110);
+    expect(scheduler.timedOutCount).toBe(1);
+    expect(scheduler.acknowledge(0, 120).rttMs).toBeNull();
+    scheduler.reset();
+    expect(scheduler.timedOutCount).toBe(0);
+    expect(scheduler.droppedCount).toBe(0);
+  });
   it('sends immediately while nothing is in flight', () => {
     const scheduler = createFrameScheduler();
     expect(scheduler.offer(frame(1), 0)).toEqual([frame(1)]);

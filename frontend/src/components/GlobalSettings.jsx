@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef } from 'react';
 import UpdatePanel from './UpdatePanel';
+import RuntimeReadiness from './RuntimeReadiness';
 import Toggle from './Toggle';
 import {
   Activity,
@@ -143,6 +144,10 @@ export default function GlobalSettings({
   serverStats = {},
   streamSampleRate = null,
   updates,
+  runtimeChecking,
+  runtimeError,
+  onRefreshRuntime,
+  runtimeSetup,
 }) {
   const dialogRef = useRef(null);
 
@@ -433,11 +438,13 @@ export default function GlobalSettings({
 
             <div className="mt-2 divide-y divide-line">
               <RuntimeBadge label="ONNX Runtime" ready={config.runtime?.onnx?.available} />
-              <RuntimeBadge label="PyTorch / RVC" ready={config.runtime?.torch?.available} />
+              <RuntimeBadge label="PyTorch" ready={config.runtime?.torch?.available} />
             </div>
           </div>
 
           <div className="divide-y divide-line">
+            <RuntimeReadiness setup={runtimeSetup} readiness={config.runtime?.rvc} checking={runtimeChecking}
+              error={runtimeError} onRefresh={onRefreshRuntime} />
             <RuntimeItem
               label="ONNX Provider"
               value={onnxProvider}

@@ -13,6 +13,7 @@ from backend.config import DEFAULT_F0_METHOD, settings
 from backend.services.audio_processor import resample as resample_audio
 from backend.services.f0_adapter import F0Adapter
 from backend.services.f0_registry import F0_METHOD_BY_ID, normalize_f0_method
+from backend.services.hubert_checkpoint import load_hubert_checkpoint
 
 logger = logging.getLogger(__name__)
 
@@ -320,12 +321,14 @@ class RvcProcessor:
                 models, _, _ = checkpoint_utils.load_model_ensemble_and_task(
                     [str(self._hubert_path)],
                     suffix="",
+                    state=load_hubert_checkpoint(self._torch, self._hubert_path),
                 )
         else:
             self._torch.serialization.add_safe_globals([Dictionary])
             models, _, _ = checkpoint_utils.load_model_ensemble_and_task(
                 [str(self._hubert_path)],
                 suffix="",
+                state=load_hubert_checkpoint(self._torch, self._hubert_path),
             )
         hubert_model = models[0].to(self._runtime.device)
         self._hubert_model = hubert_model.half() if self._runtime.is_half else hubert_model.float()

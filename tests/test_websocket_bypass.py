@@ -76,6 +76,73 @@ LOUD_EFFECTS = {
 }
 
 
+@pytest.mark.parametrize("error_type", [RuntimeError, ValueError, OSError])
+def test_loaded_model_failure_mutes_even_effect_tails(audio, error_type):
+    class BrokenModel(FakeModelManager):
+        def process_audio(self, audio, settings):
+            raise error_type("private checkpoint path / missing F0 model")
+
+    state = make_state(effects=LOUD_EFFECTS, silence_saver=False)
+    output, mode, *_ = _process_frame_sync(audio, BrokenModel(), state)
+    assert mode == "error"
+    assert np.count_nonzero(output) == 0
+    assert state["chain"] is None
+    assert "muted" in state["processing_error"]
+    assert "private" not in state["processing_error"]
+    _get_chain(state)
+    _, mode, *_ = _process_frame_sync(audio, FakeModelManager(), state)
+    assert mode == "rvc"
+    assert state["processing_error"] is None
+
+
+def test_live_forwards_mangio_hop(audio):
+    received = {}
+
+    class CaptureModel(FakeModelManager):
+        def process_audio(self, audio, settings):
+            received.update(settings)
+            return audio
+
+    state = make_state()
+    _apply_settings({"crepe_hop_length": 512}, state)
+    _process_frame_sync(audio, CaptureModel(), state)
+    assert received["crepe_hop_length"] == 512
+
+
+def test_failure_still_acknowledges_audio_and_reports_recovery(audio):
+    from backend.routers.websocket import _handle_binary_frame
+    from backend.services.audio_processor import audio_to_bytes, bytes_to_audio
+
+    class Socket:
+        binary = []
+        messages = []
+
+        async def send_bytes(self, data):
+            self.binary.append(data)
+
+        async def send_json(self, data):
+            self.messages.append(data)
+
+    class BrokenModel(FakeModelManager):
+        def process_audio(self, audio, settings):
+            raise RuntimeError("inference failed")
+
+    async def scenario():
+        socket = Socket()
+        state = make_state()
+        for seq in (7, 8):
+            await _handle_binary_frame(socket, audio_to_bytes(audio, seq), BrokenModel(), state)
+        output, seq, _ = bytes_to_audio(socket.binary[0])
+        assert seq == 7
+        assert not np.any(output)
+        assert len(socket.messages) == 1
+        assert socket.messages[0]["mode"] == "error"
+        await _handle_binary_frame(socket, audio_to_bytes(audio, 9), FakeModelManager(), state)
+        assert socket.messages[-1]["processing_error"] is None
+
+    asyncio.run(scenario())
+
+
 class TestBypassSemantics:
     def test_returns_the_input_untouched(self, audio):
         state = make_state(bypass=True)

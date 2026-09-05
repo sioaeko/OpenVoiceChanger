@@ -54,7 +54,10 @@ def owned_path(root: Path, *parts: str) -> Path:
     # Reject junctions/symlink parents, including links that happen to point inside the repo.
     current = path
     while current != root:
-        if current.is_symlink() or (hasattr(current, "is_junction") and current.is_junction()):
+        # Python 3.10 has no Path.is_junction; Windows reparse attributes cover it.
+        reparse = current.exists() and bool(getattr(current.lstat(), "st_file_attributes", 0)
+                                           & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0))
+        if current.is_symlink() or reparse:
             raise UpdateError("Linked updater directories are not supported. Update manually.")
         current = current.parent
     return path
@@ -77,7 +80,10 @@ def _safe_archive_path(name: str) -> bool:
 
 def unpack_frontend(bundle: Path, destination: Path, release: Release):
     with bundle.open("rb") as source:
-        digest = hashlib.file_digest(source, "sha256").hexdigest()
+        hasher = hashlib.sha256()
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            hasher.update(chunk)
+        digest = hasher.hexdigest()
     if f"sha256:{digest}" != release.digest:
         raise UpdateError("The frontend bundle failed SHA-256 verification.")
     try:

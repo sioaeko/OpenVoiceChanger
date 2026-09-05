@@ -1,6 +1,5 @@
-import React, { memo, useEffect, useRef } from 'react';
-import { Circle, Download, Square, Trash2 } from 'lucide-react';
-import { formatRecordLimit } from '../lib/recording';
+import React, { memo, useEffect, useRef, useState } from 'react';
+import { Circle, Download, Square, Trash2, Check, Pencil, RefreshCw, X } from 'lucide-react';
 import { formatBytes, formatDuration } from '../lib/format';
 
 // The elapsed counter ticks at animation rate. It subscribes to the pipeline's
@@ -25,8 +24,60 @@ function RecordTimer({ meters }) {
 }
 
 // Records the converted output stream and offers a WAV download.
+function TakeRow({ take, library }) {
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState(take.name);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const renameRef = useRef(null);
+  const deleteRef = useRef(null);
+  const finishEditing = () => {
+    setEditing(false);
+    requestAnimationFrame(() => renameRef.current?.focus());
+  };
+  const iconButton = 'chip-button inline-flex h-9 w-9 shrink-0 items-center justify-center !p-0';
+  return (
+    <li className="min-w-0 py-4">
+      {editing ? (
+        <form className="flex gap-2" onSubmit={(event) => {
+          event.preventDefault();
+          if (name.trim()) { library.renameTake(take, name); finishEditing(); }
+        }}>
+          <input autoFocus aria-label="Take name" maxLength={120} value={name} required
+            onChange={(event) => setName(event.target.value)}
+            onKeyDown={(event) => { if (event.key === 'Escape') finishEditing(); }}
+            className="min-w-0 flex-1 rounded border border-line bg-input px-2 py-1 text-sm text-fg" />
+          <button className={iconButton} aria-label="Save name" title="Save name" disabled={!name.trim()}><Check className="h-4 w-4" /></button>
+          <button type="button" className={iconButton} aria-label="Cancel rename" title="Cancel rename" onClick={finishEditing}><X className="h-4 w-4" /></button>
+        </form>
+      ) : <p className="break-words text-sm font-medium text-fg-secondary">{take.name}</p>}
+      <p className="mt-1 text-xs text-fg-subtle">
+        {formatDuration(take.seconds)} · {formatBytes(take.size)} · {take.pending ? 'Saving...' : take.persisted ? 'Saved in this browser' : 'Not saved'}
+      </p>
+      {!take.persisted && !take.pending && <p role="status" className="mt-2 text-xs text-warn-fg">Storage failed. Download this take before closing the tab, or retry saving.</p>}
+      <audio controls preload="none" src={take.url} aria-label={`Play ${take.name}`} className="mt-3 h-9 w-full min-w-0" />
+      <div className="mt-2 flex flex-wrap items-center justify-end gap-2">
+        <a href={take.url} download={take.fileName} onClick={() => library.markDownloaded(take.id)}
+          className={iconButton} title="Download WAV" aria-label={`Download ${take.name}`}><Download className="h-4 w-4" /></a>
+        <button ref={renameRef} className={iconButton} disabled={take.pending} title="Rename take" aria-label={`Rename ${take.name}`}
+          onClick={() => { setName(take.name); setEditing(true); }}><Pencil className="h-4 w-4" /></button>
+        {!take.persisted && <button className={iconButton} disabled={take.pending} title="Retry saving" aria-label={`Retry saving ${take.name}`}
+          onClick={() => library.retrySave(take)}><RefreshCw className="h-4 w-4" /></button>}
+        <button ref={deleteRef} className={iconButton} disabled={take.pending} title="Delete take" aria-label={`Delete ${take.name}`}
+          onClick={() => setConfirmDelete(true)}><Trash2 className="h-4 w-4" /></button>
+      </div>
+      {confirmDelete && <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+        <span className="text-fg-secondary">Delete this take permanently?</span>
+        <button className="chip-button text-danger-fg" disabled={take.pending} onClick={() => {
+          setConfirmDelete(false); void library.deleteTake(take);
+        }}>Delete</button>
+        <button className="chip-button" onClick={() => { setConfirmDelete(false); deleteRef.current?.focus(); }}>Cancel</button>
+      </div>}
+    </li>
+  );
+}
+
 function Recorder({ pipeline }) {
-  const { isRunning, isRecording, lastRecording, recordNotice, meters, maxRecordSeconds } = pipeline;
+  const { isRunning, isRecording, library, recordNotice, meters } = pipeline;
 
   return (
     <section className="panel p-5">
@@ -81,40 +132,15 @@ function Recorder({ pipeline }) {
         </div>
       )}
 
-      {lastRecording ? (
-        <div className="mt-4 border-t border-line pt-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-xs font-medium text-fg-subtle">
-              Last take · {formatDuration(lastRecording.seconds)} · {formatBytes(lastRecording.size)}
-            </p>
-            <div className="flex items-center gap-2">
-              <a
-                href={lastRecording.url}
-                download={lastRecording.fileName || 'voice-take.wav'}
-                className="chip-button inline-flex items-center gap-1.5"
-              >
-                <Download className="h-3.5 w-3.5" aria-hidden="true" />
-                Download WAV
-              </a>
-              <button
-                onClick={() => pipeline.discardRecording()}
-                className="chip-button inline-flex h-8 w-8 items-center justify-center !p-0"
-                aria-label="Discard recording"
-                title="Discard recording"
-              >
-                <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-              </button>
-            </div>
-          </div>
-          <audio controls src={lastRecording.url} className="mt-3 h-9 w-full" />
-        </div>
-      ) : (
-        <p className="mt-3 text-xs text-fg-faint">
-          {isRunning
-            ? `Capture the converted voice as a 16-bit WAV file. Takes are held in memory and stop automatically at ${formatRecordLimit(maxRecordSeconds)}.`
-            : 'Start the voice changer, then record your converted voice.'}
-        </p>
-      )}
+      {library.error && <p role="alert" className="mt-3 text-xs text-warn-fg">{library.error}</p>}
+      <div className="mt-4 border-t border-line pt-3">
+        <p className="text-xs font-semibold text-fg-secondary">Takes ({library.takes.length})</p>
+        {library.loading && <p role="status" className="mt-2 text-xs text-fg-subtle">Loading saved takes...</p>}
+        {!library.loading && !library.takes.length && <p className="mt-2 text-xs text-fg-faint">No takes yet.</p>}
+        <ul className="max-h-96 overflow-y-auto divide-y divide-line">
+          {library.takes.map((take) => <TakeRow key={take.id} take={take} library={library} />)}
+        </ul>
+      </div>
     </section>
   );
 }

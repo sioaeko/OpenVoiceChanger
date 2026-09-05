@@ -6,6 +6,7 @@ import io
 import json
 import logging
 from pathlib import Path
+from urllib.parse import quote
 
 import numpy as np
 from fastapi import APIRouter, Form, HTTPException, Request, UploadFile
@@ -183,5 +184,5 @@ async def convert_file(
     return Response(
         content=wav_bytes,
         media_type="audio/wav",
-        headers={"Content-Disposition": f'inline; filename="{out_name}"'},
+        headers={"Content-Disposition": f"inline; filename=\"converted.wav\"; filename*=UTF-8''{quote(out_name, safe='')}"},
     )

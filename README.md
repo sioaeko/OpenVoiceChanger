@@ -36,6 +36,9 @@
 - **Measured performance profiles** (Responsive / Balanced / Stable) recommend a chunk size from recent p95 round-trip and server processing time
 - Real-time spectrum visualizer, VU meters with peak hold, latency sparkline, server timing breakdown (model / DSP / network), and live inference duty monitoring
 - **Output recorder** — capture the converted voice (<kbd>R</kbd>) and download it as a timestamped WAV; <kbd>B</kbd> flips the A/B bypass
+- **Take library** stores multiple WAV takes in this browser with rename, playback, download, and confirmed deletion. IndexedDB storage survives refresh on the same origin; it is not a backup and can be cleared or evicted by the browser. Failed saves retain a downloadable take and offer retry.
+- **Stream diagnostics** separates capture chunk duration, queued audio, playback buffering, browser-reported output latency, dropped/timed-out frames, underruns and trimmed playback. Round trip measures WebSocket transport plus processing, not microphone-to-speaker latency. Counters reset with the stream/connection and update at low frequency.
+- Loaded-model inference failures mute output and show an error instead of falling back to the original voice. A failed output-device selection stops startup instead of using the default speakers.
 - Automatic reconnect with exponential back-off and a **Retry now** shortcut when the server goes away mid-session
 
 ### Offline converter
@@ -45,6 +48,7 @@
 - Drag-and-drop model upload (`.pth` / `.pt` / `.onnx` + companion `.index` files), one active model at a time
 - Model metadata badges: RVC version, target sample rate, F0 support, index presence, device
 - Session settings for light/dark theme, transport profiles, Silence Saver, and ONNX / PyTorch / GPU / CUDA runtime visibility
+- **RVC readiness** in Models and Settings lists required packages and HuBERT, optional F0 weights, installation guidance and recheck. Detection is not an inference test; loading a real model verifies execution. Reconnecting refreshes capabilities and presets without resetting voice or transport settings.
 - In-app update check with one-click **Update and restart** through the managed launcher (see [Updates](#updates))
 - Linkable tabs (`?tab=models`, `?tab=converter`, `?settings`) that keep their state — a chosen file or an in-progress render survives switching views — with Back/Forward moving between them
 - Consistent Lucide controls with keyboard-visible focus states and a proper tablist, plus an explicit GitHub Star action with a normal repository-link fallback
@@ -140,6 +144,29 @@ cd ..
 
 ### 4. Prepare model assets
 
+**Windows x64 CPU shortcut:** start the app with `python launch.py`, then open
+**Models > RVC readiness > Set up RVC > Install and restart**. This creates a
+separate Python 3.10.20 environment under `data/rvc-setup/`, installs hash-locked
+CPU dependencies and pinned inference-only RVC/fairseq sources, and downloads
+SHA-256-verified HuBERT and RMVPE weights (353.5 MiB, plus Python/packages).
+Allow at least 6 GiB free. The existing Python/CUDA installation, voice models,
+presets and takes are not replaced. Stop routing/conversion and save pending
+recordings before installation. The launcher switches only after HuBERT/RMVPE
+inference and API import checks pass; a failed restart restores the previous
+runtime. Cancel is available before switching, and retry reuses verified downloads.
+Logs: `data/rvc-setup/jobs/<job-id>/setup.log`. Incomplete attempts are retained
+for diagnosis. GPU acceleration, voice checkpoints, training extensions and
+optional ONNX F0 weights are **not** included. Other platforms use manual setup.
+The managed launcher remembers the selected environment on the next start;
+direct `uvicorn` commands do not use this selection.
+
+Download provenance and hashes: [`setup_manifest.py`](backend/services/setup_manifest.py).
+The dependency source and generated lock are in [`backend/runtime/`](backend/runtime/).
+Only the pinned HuBERT content hash permits legacy configuration-object loading;
+user-uploaded voice checkpoints retain the existing safe-loading restrictions.
+
+For manual installations:
+
 RVC `.pth` / `.pt` models need a HuBERT content encoder file.
 
 ```powershell
@@ -190,7 +217,7 @@ The studio checks the official public GitHub Release on startup and every hour. 
 **Update and restart** requires `python launch.py`, Git, the official `origin`, and a clean `main` branch. The launcher downloads the release's prebuilt frontend, verifies the GitHub SHA-256 digest and per-file manifest, fast-forwards to the verified release commit, and restarts the server. No GitHub login, Node.js build, pip install or CUDA change is involved. Updates that change Python dependency files require a manual update. A ZIP source download or direct `uvicorn` launch supports notifications, but not in-app installation.
 
 - Stop audio routing before installing. Uploads, conversions and recent audio frames block installation on the server as well.
-- Download and clear the last recording, and download unsaved converter output before restarting. Other open tabs are not automatically reloaded.
+- Wait for takes to finish saving, or download takes whose storage failed, and download unsaved converter output before restarting. Saved takes do not block updates. Other open tabs are not automatically reloaded.
 - Models, `data/presets.json` and browser-saved settings are kept. A failed startup restores the previous source and frontend; concurrent local edits stop recovery instead of being overwritten.
 - Recovery files remain in `tmp/updater/jobs/`. If recovery needs attention, inspect `tmp/updater/state.json` and the launcher log before changing the checkout.
 - Set `OVC_UPDATE_CHECK_ENABLED=false` to disable background GitHub checks. Manual checks still work. Installation is restricted to the same computer, even with permissive CORS settings.
@@ -415,10 +442,13 @@ npm run build
 `backend/requirements.txt` — the tests cover the transport, DSP chain, offline
 converter, origin validation, checkpoint loading and the updater, none of which
 need the full RVC inference stack. CI (`.github/workflows/ci.yml`) runs the
-backend suite on Linux, the updater tests again on Windows, and the frontend
-lint, tests and build.
+backend suite on Linux, updater/setup tests on Windows, and frontend lint,
+tests and build. A separate Windows job runs `python -m scripts.verify_runtime_setup`:
+it downloads into empty caches, tests HuBERT/RMVPE inference, and verifies two
+managed starts and complete shutdowns. This networked check requires at least
+6 GiB free and leaves its isolated installation in `tmp/runtime-cold-*` for diagnosis.
 
-The frontend tests run in a plain Node environment, so browser behaviour is
+The frontend tests use Node, jsdom and SSR checks, so real browser behaviour is
 checked separately: `node scripts/readme_screenshots.mjs` doubles as a smoke
 test that starts a real stream in headless Chromium.
 

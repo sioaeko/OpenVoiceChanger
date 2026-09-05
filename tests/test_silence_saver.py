@@ -137,7 +137,7 @@ def test_no_active_model_keeps_the_existing_dsp_path():
     output, mode, _, _ = _process_frame_sync(tone, manager, state)
 
     assert mode == "dsp"
-    assert manager.calls == 1
+    assert manager.calls == 0
     assert manager.released == []
     assert state["inference_sleeping"] is False
     assert not np.array_equal(output, tone)

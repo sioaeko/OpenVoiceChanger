@@ -318,6 +318,7 @@ def _process_frame_sync(audio, model_manager, conn_state: dict) -> tuple:
     the stale history can produce a brief artifact on the first chunk after
     un-bypassing, which is preferable to discarding the stream's context.
     """
+    conn_state["processing_error"] = None
     if conn_state.get("bypass"):
         conn_state["inference_sleeping"] = False
         return audio, "bypass", 0.0, 0.0
@@ -362,6 +363,8 @@ def _process_frame_sync(audio, model_manager, conn_state: dict) -> tuple:
             conn_state["sleep_stream_released"] = True
         # Keep the post-effect stage alive so time-based tails decay naturally.
         processed = np.zeros_like(processed)
+    elif not active:
+        processed = chain.apply_pitch(processed, pitch_shift)
     else:
         t_model = time.perf_counter()
         try:
@@ -376,6 +379,7 @@ def _process_frame_sync(audio, model_manager, conn_state: dict) -> tuple:
                     "filter_radius": conn_state["filter_radius"],
                     "rms_mix_rate": conn_state["rms_mix_rate"],
                     "protect": conn_state["protect"],
+                    "crepe_hop_length": conn_state.get("crepe_hop_length", settings.CREPE_HOP_LENGTH),
                 },
             )
             model_ms = (time.perf_counter() - t_model) * 1000.0
@@ -383,16 +387,17 @@ def _process_frame_sync(audio, model_manager, conn_state: dict) -> tuple:
                 conn_state["status_model_inference_frames"] = (
                     conn_state.get("status_model_inference_frames", 0) + 1
                 )
-        except RuntimeError:
-            # No active model — DSP passthrough handles pitch instead.
-            active = None
-            mode = "dsp"
-            conn_state["status_model_eligible_frames"] = max(
-                conn_state.get("status_model_eligible_frames", 0) - 1,
-                0,
-            )
-            processed = chain.apply_pitch(processed, pitch_shift)
+        except Exception:
+            if not conn_state.get("failure_logged"):
+                logger.exception("Model inference failed; muting stream %s", conn_state["stream_id"])
+            conn_state["failure_logged"] = True
+            conn_state["processing_error"] = "Model inference failed. Output is muted. Check runtime readiness, F0 assets and server logs, then reload the model."
+            conn_state["inference_sleeping"] = False
+            # Do not run post-effects: delay/reverb tails could leak previous audio.
+            conn_state["chain"] = None
+            return np.zeros_like(audio), "error", (time.perf_counter() - t_model) * 1000.0, 0.0
 
+    conn_state["failure_logged"] = False
     conn_state["inference_sleeping"] = sleeping and bool(active)
 
     processed = chain.post_process(processed, effects, conn_state["formant_shift"])
@@ -431,6 +436,10 @@ async def _handle_binary_frame(
     server_time = min(int(elapsed_ms * 100), 0xFFFFFFFF)
     response_bytes = audio_to_bytes(processed, seq_num, reserved=server_time)
     await websocket.send_bytes(response_bytes)
+    error = conn_state.get("processing_error")
+    if error != conn_state.get("reported_error"):
+        conn_state["reported_error"] = error
+        await _send_status(websocket, model_manager, conn_state)
 
 
 def _handle_json_message(text: str, conn_state: dict) -> None:
@@ -490,6 +499,7 @@ async def _send_status(websocket: WebSocket, model_manager, conn_state: dict) ->
         "model_ms": round(conn_state["model_ms"], 2),
         "dsp_ms": round(conn_state["dsp_ms"], 2),
         "mode": mode,
+        "processing_error": conn_state.get("processing_error"),
         "bypass": bypassed,
         "active_model": active["name"] if active else None,
         "silence_saver": bool(conn_state.get("silence_saver", DEFAULT_SILENCE_SAVER)),

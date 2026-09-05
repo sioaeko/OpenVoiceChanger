@@ -1,5 +1,6 @@
 import React, { memo, useEffect, useMemo, useRef } from 'react';
 import { Pause } from 'lucide-react';
+import StreamDiagnostics from './StreamDiagnostics';
 import { levelToPercent, nextPeak } from '../lib/meters';
 
 // Solid zone coloring, VU convention: green / yellow / red. Listed as literal
@@ -123,6 +124,9 @@ function MonitorDisplay({
   serverMs,
   serverStats,
   bypass = false,
+  streamInfo,
+  playbackStats,
+  transport,
 }) {
   const latencyMs = Math.round(latency);
   const networkMs = Math.max(0, Math.round(latency - (serverMs || 0)));
@@ -158,6 +162,9 @@ function MonitorDisplay({
         ) : null}
       </div>
 
+      {serverStats?.processingError && !bypass && (
+        <p role="alert" className="mt-3 text-sm text-danger-fg">{serverStats.processingError}</p>
+      )}
       <div className="mt-5 space-y-3.5">
         <VuMeter label="Input" meters={meters} channel="input" />
         <VuMeter label="Output" meters={meters} channel="output" />
@@ -189,12 +196,13 @@ function MonitorDisplay({
           label="DSP"
           value={serverStats?.dspMs > 0 ? `${Math.max(1, Math.round(serverStats.dspMs))}ms` : '--'}
         />
-        <StatChip label="Network" value={latencyMs > 0 ? `${networkMs}ms` : '--'} />
+        <StatChip label="Transport" value={latencyMs > 0 ? `${networkMs}ms` : '--'} />
         <StatChip
           label="Duty"
           value={serverStats?.activeModel ? `${Math.round(serverStats.inferenceDutyPercent || 0)}%` : '--'}
         />
       </div>
+      <StreamDiagnostics streamInfo={streamInfo} playbackStats={playbackStats} transport={transport} serverMs={serverMs} />
     </section>
   );
 }

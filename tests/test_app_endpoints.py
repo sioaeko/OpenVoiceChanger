@@ -28,6 +28,25 @@ def client(tmp_path_factory):
 
 
 class TestHealthAndConfig:
+    @pytest.mark.parametrize("filename", ["test.wav", "\ud14c\uc2a4\ud2b8.wav", "\u97f3\u58f0.wav", 'quoted"name.wav'])
+    def test_unicode_conversion_response(self, client, filename):
+        import io
+        import soundfile as sf
+        from urllib.parse import quote
+
+        source = io.BytesIO()
+        sf.write(source, np.ones(1600, dtype=np.float32) * 0.1, 16000, format="WAV")
+        response = client.post("/api/convert/", files={"file": (filename, source.getvalue(), "audio/wav")},
+                               data={"use_model": "false"})
+        assert response.status_code == 200
+        assert response.content[:4] == b"RIFF"
+        assert response.headers["content-disposition"].startswith('inline; filename="converted.wav";')
+        if '"' not in filename:
+            assert quote(filename[:-4] + "_converted.wav", safe="") in response.headers["content-disposition"]
+        decoded, rate = sf.read(io.BytesIO(response.content))
+        assert rate == 16000
+        assert len(decoded) == 1600
+
     def test_health(self, client):
         assert client.get("/health").json() == {"status": "ok"}
 
@@ -223,7 +242,7 @@ class TestConvertResponse:
 
         assert response.status_code == 200
         assert response.headers["content-type"] == "audio/wav"
-        assert response.headers["content-disposition"] == 'inline; filename="tone_converted.wav"'
+        assert response.headers["content-disposition"] == "inline; filename=\"converted.wav\"; filename*=UTF-8''tone_converted.wav"
         rendered, sample_rate = sf.read(io.BytesIO(response.content), dtype="float32")
         assert sample_rate == 16000
         assert len(rendered) == 8000

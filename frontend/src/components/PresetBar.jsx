@@ -40,7 +40,7 @@ function PresetChip({ preset, active, onApply, onDelete }) {
   );
 }
 
-function PresetBar({ activePresetId, onApplyPreset, getCurrentSettings }) {
+function PresetBar({ activePresetId, onApplyPreset, getCurrentSettings, refreshRevision = 0 }) {
   const [presets, setPresets] = useState({ builtin: [], user: [] });
   const [saving, setSaving] = useState(false);
   const [saveName, setSaveName] = useState('');
@@ -62,7 +62,7 @@ function PresetBar({ activePresetId, onApplyPreset, getCurrentSettings }) {
 
   useEffect(() => {
     load();
-  }, [load]);
+  }, [load, refreshRevision]);
 
   const handleSave = async () => {
     const name = saveName.trim();
